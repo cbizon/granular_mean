@@ -1,0 +1,7 @@
+{
+  "schema_version": "1.0",
+  "archive": "granular-benchmark-reference-v1.zip",
+  "sha256": "eb4c942abedb100519a58e39867dd2ea0ee148090df82d5dc12fe753ba7c5d09",
+  "top_level_directory": "generated",
+  "description": "Validated Updated-C trajectories, checkpoints, and qualification reports for all seven Figure 1 cases."
+}

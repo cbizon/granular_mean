@@ -1,0 +1,224 @@
+{
+  "schema_version": "1.0",
+  "benchmark_id": "granular-figure1",
+  "title": "Reproduce the granular-layer simulations in Bizon et al. Figure 1",
+  "description": "Implement the paper's event-driven granular simulation and submit seven normalized trajectory archives reproducing Figure 1.",
+  "submission": {
+    "manifest_path": "submission/manifest.json",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "implementation",
+        "cases"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0",
+          "description": "Submission contract version."
+        },
+        "implementation": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": [
+            "language"
+          ],
+          "properties": {
+            "language": {
+              "const": "python"
+            },
+            "description": {
+              "type": "string"
+            }
+          },
+          "description": "Description of the submitted Python implementation."
+        },
+        "cases": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "a",
+            "b",
+            "cd",
+            "e",
+            "f",
+            "g",
+            "h"
+          ],
+          "properties": {
+            "a": {
+              "$ref": "#/$defs/case"
+            },
+            "b": {
+              "$ref": "#/$defs/case"
+            },
+            "cd": {
+              "$ref": "#/$defs/case"
+            },
+            "e": {
+              "$ref": "#/$defs/case"
+            },
+            "f": {
+              "$ref": "#/$defs/case"
+            },
+            "g": {
+              "$ref": "#/$defs/case"
+            },
+            "h": {
+              "$ref": "#/$defs/case"
+            }
+          },
+          "description": "One manifest entry for each Figure 1 simulation condition."
+        }
+      },
+      "$defs": {
+        "case": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "trajectory",
+            "particle_count",
+            "box_width",
+            "box_height",
+            "seed",
+            "simulation_cycle",
+            "walltime_seconds"
+          ],
+          "properties": {
+            "trajectory": {
+              "type": "string",
+              "minLength": 1
+            },
+            "particle_count": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "box_width": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "box_height": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "seed": {
+              "type": "integer"
+            },
+            "simulation_cycle": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Total forcing cycles simulated from initialization through the final submitted frame."
+            },
+            "walltime_seconds": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Elapsed wall-clock seconds for the simulation run producing this trajectory."
+            }
+          }
+        }
+      }
+    }
+  },
+  "run_status_path": "submission/run-status.json",
+  "work_units": [
+    {
+      "id": "a",
+      "description": "Panel a: Gamma=3.0, f*=0.27, square pattern, 4 exported cycles."
+    },
+    {
+      "id": "b",
+      "description": "Panel b: Gamma=3.0, f*=0.44, stripe pattern, 4 exported cycles."
+    },
+    {
+      "id": "cd",
+      "description": "Panels c and d: Gamma=4.0, f*=0.38, alternating hexagons, 4 exported cycles."
+    },
+    {
+      "id": "e",
+      "description": "Panel e: Gamma=5.0, f*=0.44, flat state, 4 exported cycles."
+    },
+    {
+      "id": "f",
+      "description": "Panel f: Gamma=5.79, f*=0.47, square pattern, 8 exported cycles."
+    },
+    {
+      "id": "g",
+      "description": "Panel g: Gamma=6.0, f*=0.84, stripe pattern, 8 exported cycles."
+    },
+    {
+      "id": "h",
+      "description": "Panel h: Gamma=7.0, f*=0.75, hexagonal pattern, 8 exported cycles."
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "trajectory-a",
+      "description": "Normalized NPZ trajectory for Figure 1 panel a.",
+      "manifest_pointer": "/cases/a/trajectory",
+      "media_type": "application/x-npz",
+      "minimum_bytes": 1000,
+      "maximum_bytes": 2147483648
+    },
+    {
+      "id": "trajectory-b",
+      "description": "Normalized NPZ trajectory for Figure 1 panel b.",
+      "manifest_pointer": "/cases/b/trajectory",
+      "media_type": "application/x-npz",
+      "minimum_bytes": 1000,
+      "maximum_bytes": 2147483648
+    },
+    {
+      "id": "trajectory-cd",
+      "description": "Normalized NPZ trajectory used for Figure 1 panels c and d.",
+      "manifest_pointer": "/cases/cd/trajectory",
+      "media_type": "application/x-npz",
+      "minimum_bytes": 1000,
+      "maximum_bytes": 2147483648
+    },
+    {
+      "id": "trajectory-e",
+      "description": "Normalized NPZ trajectory for Figure 1 panel e.",
+      "manifest_pointer": "/cases/e/trajectory",
+      "media_type": "application/x-npz",
+      "minimum_bytes": 1000,
+      "maximum_bytes": 2147483648
+    },
+    {
+      "id": "trajectory-f",
+      "description": "Normalized NPZ trajectory for Figure 1 panel f.",
+      "manifest_pointer": "/cases/f/trajectory",
+      "media_type": "application/x-npz",
+      "minimum_bytes": 1000,
+      "maximum_bytes": 2147483648
+    },
+    {
+      "id": "trajectory-g",
+      "description": "Normalized NPZ trajectory for Figure 1 panel g.",
+      "manifest_pointer": "/cases/g/trajectory",
+      "media_type": "application/x-npz",
+      "minimum_bytes": 1000,
+      "maximum_bytes": 2147483648
+    },
+    {
+      "id": "trajectory-h",
+      "description": "Normalized NPZ trajectory for Figure 1 panel h.",
+      "manifest_pointer": "/cases/h/trajectory",
+      "media_type": "application/x-npz",
+      "minimum_bytes": 1000,
+      "maximum_bytes": 2147483648
+    }
+  ],
+  "instructions": [
+    "Every trajectory must be readable with numpy.load(..., allow_pickle=False) and contain exactly: time (F,), drive_phase (F,), positions (F,N,3), velocities (F,N,3), angular_velocities (F,N,3), diameters (N,), plate_z (F,), plate_vz (F,), and collision_counts (F-1,3).",
+    "All arrays must be real numeric arrays. collision_counts must contain nonnegative integers in columns ball_ball, stationary_wall, bottom_plate.",
+    "The particle index must identify the same particle in every frame.",
+    "Normalize length by mean particle diameter D and acceleration by gravitational acceleration g, so mean diameter and downward gravity both equal 1.",
+    "Use a right-handed coordinate system with z increasing upward. positions and plate_z must use the same origin.",
+    "Export 4 forcing cycles for a, b, cd, and e; export 8 forcing cycles for f, g, and h.",
+    "Record 32 equal phase intervals per cycle, including the initial frame and final endpoint, so F = 32 * exported cycles + 1.",
+    "At t=0 the plate is at the midpoint of its oscillation and moving upward. The first frame and each complete-cycle endpoint have drive_phase 0. time must be strictly increasing.",
+    "Each case manifest entry must include trajectory, particle_count, box_width, box_height, seed, simulation_cycle, and walltime_seconds. Paths are relative to submission/manifest.json."
+  ]
+}
