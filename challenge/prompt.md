@@ -1,0 +1,26 @@
+# Reproduce the granular-layer simulations in Bizon et al. Figure 1
+
+The paper `sources/bizon1998a.pdf` describes comparison between a simulation
+and experiment. Implement the simulation described there in Python and use
+it to reproduce the simulation snapshots shown in Figure 1 of the paper.
+
+You must implement the algorithm as described in the paper.  Implementing other
+algorithms will be considered erroneous, and the patterns will not be valid even
+if they match visually.
+
+Continue until you accurately reproduce the Figure 1 snapshots in pattern
+and wavelength or conclude that you cannot. Decide for yourself how to validate
+against the paper.
+
+## Available software and references
+
+The environment provides Python 3.12, `uv`, NumPy, SciPy, Numba, Matplotlib,
+Pillow, psutil, pytest, and the Poppler PDF tools `pdftotext`, `pdfinfo`, and
+`pdftoppm`. Code compiled through Python tools such as Numba is allowed.
+
+You may read only the files in this workspace. The sources directory contains
+several of the papers cited in bizon1998a. Do not look for another
+implementation locally, online, or on GitHub. General network access is
+unavailable.
+
+{{BRUNNER_OUTPUT_CONTRACT}}

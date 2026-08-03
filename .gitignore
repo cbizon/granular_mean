@@ -1,0 +1,17 @@
+.DS_Store
+.coverage
+.pytest_cache/
+.ruff_cache/
+.uv-cache/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+campaign-runs/
+dist/
+runs/
+staged/
+
+reference/generated/
+reference/manifest.json
