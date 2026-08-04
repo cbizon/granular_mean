@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from brunner.contract import load_output_contract
 from brunner.staging import stage_challenge
 
@@ -35,10 +37,22 @@ def test_stage_preserves_task_and_excludes_trusted_material(
 
     staged = stage_challenge(definition, contract, destination)
     prompt = (destination / "PROMPT.md").read_text()
+    normalized_prompt = " ".join(prompt.split())
 
     assert staged.workspace == destination.resolve()
     assert "Implement the simulation described there in Python" in prompt
     assert "Do not look for another" in prompt
+    assert "Use the paper as the authoritative source" in prompt
+    assert (
+        "its visible patterns must not be used to construct, prescribe, "
+        "initialize, or transform the trajectories"
+    ) in normalized_prompt
+    assert "Panel a: Gamma=3.0, f*=0.27, 4 exported cycles." in prompt
+    assert "square pattern" not in prompt
+    assert "stripe pattern" not in prompt
+    assert "alternating hexagons" not in prompt
+    cases = json.loads((destination / "cases.json").read_text())["cases"]
+    assert all("pattern" not in case for case in cases.values())
     assert "completed_units" in prompt
     assert "{{BRUNNER_OUTPUT_CONTRACT}}" not in prompt
     assert (destination / "sources/bizon1998a.pdf").is_file()

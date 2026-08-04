@@ -125,31 +125,31 @@
   "work_units": [
     {
       "id": "a",
-      "description": "Panel a: Gamma=3.0, f*=0.27, square pattern, 4 exported cycles."
+      "description": "Panel a: Gamma=3.0, f*=0.27, 4 exported cycles."
     },
     {
       "id": "b",
-      "description": "Panel b: Gamma=3.0, f*=0.44, stripe pattern, 4 exported cycles."
+      "description": "Panel b: Gamma=3.0, f*=0.44, 4 exported cycles."
     },
     {
       "id": "cd",
-      "description": "Panels c and d: Gamma=4.0, f*=0.38, alternating hexagons, 4 exported cycles."
+      "description": "Panels c and d: Gamma=4.0, f*=0.38, 4 exported cycles."
     },
     {
       "id": "e",
-      "description": "Panel e: Gamma=5.0, f*=0.44, flat state, 4 exported cycles."
+      "description": "Panel e: Gamma=5.0, f*=0.44, 4 exported cycles."
     },
     {
       "id": "f",
-      "description": "Panel f: Gamma=5.79, f*=0.47, square pattern, 8 exported cycles."
+      "description": "Panel f: Gamma=5.79, f*=0.47, 8 exported cycles."
     },
     {
       "id": "g",
-      "description": "Panel g: Gamma=6.0, f*=0.84, stripe pattern, 8 exported cycles."
+      "description": "Panel g: Gamma=6.0, f*=0.84, 8 exported cycles."
     },
     {
       "id": "h",
-      "description": "Panel h: Gamma=7.0, f*=0.75, hexagonal pattern, 8 exported cycles."
+      "description": "Panel h: Gamma=7.0, f*=0.75, 8 exported cycles."
     }
   ],
   "artifacts": [

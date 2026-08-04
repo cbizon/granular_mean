@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from brunner.backends import LocalBackend
+from brunner.backends import KubernetesBackend
 from brunner.contract import load_output_contract
 from brunner.trial import TrialIdentity
 
@@ -19,6 +19,8 @@ from granular_mean.agent import (
 )
 from granular_mean.campaign import (
     CAMPAIGN_ID,
+    DEFAULT_STERLING_CODEX_SECRET,
+    DEFAULT_STERLING_NAMESPACE,
     build_campaign,
     build_campaign_trials,
 )
@@ -43,12 +45,13 @@ def test_campaign_runs_sol_at_every_supported_effort() -> None:
     assert len({trial.test_id for trial in trials}) == len(CODEX_EFFORTS)
 
 
-def test_campaign_uses_local_backend_and_configured_parallelism(
+def test_campaign_uses_sterling_backend_and_configured_parallelism(
     monkeypatch,
     tmp_path,
 ) -> None:
     monkeypatch.setenv("GRANULAR_MEAN_CAMPAIGN_ROOT", str(tmp_path))
     monkeypatch.setenv("GRANULAR_MEAN_MAX_PARALLEL", "2")
+    monkeypatch.setenv("GRANULAR_MEAN_AGENT_IMAGE", "agent:test")
     definition = build_reviewed_definition()
     contract = load_output_contract(definition.contract_path)
 
@@ -57,16 +60,26 @@ def test_campaign_uses_local_backend_and_configured_parallelism(
     assert runner.plan.campaign_id == CAMPAIGN_ID
     assert runner.plan.root == tmp_path.resolve()
     assert runner.plan.max_parallel == 2
-    assert isinstance(runner.backend, LocalBackend)
-    assert runner.backend.max_parallel == 2
+    assert runner.plan.backend_image == "agent:test"
+    assert isinstance(runner.backend, KubernetesBackend)
+    assert runner.backend.profile.namespace == DEFAULT_STERLING_NAMESPACE
+    assert runner.backend.profile.agent_image == "agent:test"
+    assert runner.backend.profile.artifact_reader_image == "agent:test"
+    assert runner.backend.profile.max_parallel == 2
+    assert runner.backend.profile.secret_environment == {
+        "AZURE_OPENAI_API_KEY": (
+            DEFAULT_STERLING_CODEX_SECRET,
+            "AZURE_OPENAI_API_KEY",
+        )
+    }
 
 
-def test_campaign_workload_uses_azure_launcher(
+def test_campaign_workload_uses_containerized_azure_launcher(
     monkeypatch,
     tmp_path,
 ) -> None:
     monkeypatch.setenv("GRANULAR_MEAN_CAMPAIGN_ROOT", str(tmp_path))
-    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("GRANULAR_MEAN_AGENT_IMAGE", "agent:test")
     definition = build_reviewed_definition()
     contract = load_output_contract(definition.contract_path)
     runner = build_campaign(definition, contract)
@@ -78,17 +91,17 @@ def test_campaign_workload_uses_azure_launcher(
         campaign_trial,
         runner.plan,
         definition,
-        "local",
+        "kubernetes",
     )
 
-    assert workload.command[1:] == (
+    assert workload.command == (
+        "python",
         "-m",
         "granular_mean.agent",
-        str(trial),
+        "/brunner/trial",
     )
-    assert workload.environment == {
-        "AZURE_OPENAI_API_KEY": "test-key"
-    }
+    assert workload.environment == {}
+    assert workload.image == "agent:test"
 
 
 def test_provider_settings_pin_model_efforts_and_azure() -> None:

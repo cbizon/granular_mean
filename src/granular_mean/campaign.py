@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import sys
 from dataclasses import replace
 from pathlib import Path
 
@@ -11,7 +10,11 @@ from brunner import (
     CampaignRunner,
     CampaignTrial,
 )
-from brunner.backends import LocalBackend, WorkloadSpec
+from brunner.backends import (
+    KubernetesBackend,
+    KubernetesProfile,
+    WorkloadSpec,
+)
 from brunner.campaign import default_workload_factory
 from brunner.contract import OutputContract
 
@@ -26,17 +29,18 @@ from granular_mean.definition import ROOT
 CAMPAIGN_VARIANT = "sol-5-6-all-efforts-v1"
 CAMPAIGN_ID = f"granular-figure1-{CAMPAIGN_VARIANT}"
 DEFAULT_MAX_PARALLEL = 1
+DEFAULT_STERLING_NAMESPACE = "bizon"
+DEFAULT_STERLING_STORAGE_SIZE = "20Gi"
+DEFAULT_STERLING_CODEX_SECRET = "balls-bench-codex-azure"
 
 
 def build_campaign_trials() -> tuple[CampaignTrial, ...]:
-    environment_key = codex_environment_key()
     return tuple(
         CampaignTrial(
             test_id=f"codex-gpt-5-6-sol-{effort}-r01",
             provider="codex",
             model=CODEX_MODEL,
             effort=effort,
-            environment_keys=(environment_key,),
         )
         for effort in CODEX_EFFORTS
     )
@@ -67,18 +71,59 @@ def campaign_workload_factory(
         definition,
         backend_name,
     )
-    backend_trial = (
-        trial if backend_name == "local" else Path("/brunner/trial")
-    )
-    python = sys.executable if backend_name == "local" else "python"
     return replace(
         workload,
         command=(
-            python,
+            "python",
             "-m",
             "granular_mean.agent",
-            str(backend_trial),
+            "/brunner/trial",
         ),
+    )
+
+
+def _optional_environment(name: str) -> str | None:
+    value = os.environ.get(name)
+    return value.strip() if value and value.strip() else None
+
+
+def _sterling_profile(
+    *,
+    agent_image: str | None,
+    max_parallel: int,
+) -> KubernetesProfile:
+    environment_key = codex_environment_key()
+    pull_secret = _optional_environment(
+        "GRANULAR_MEAN_STERLING_IMAGE_PULL_SECRET"
+    )
+    return KubernetesProfile(
+        namespace=os.environ.get(
+            "GRANULAR_MEAN_STERLING_NAMESPACE",
+            DEFAULT_STERLING_NAMESPACE,
+        ),
+        agent_image=agent_image,
+        artifact_reader_image=agent_image,
+        storage_size=os.environ.get(
+            "GRANULAR_MEAN_STERLING_STORAGE_SIZE",
+            DEFAULT_STERLING_STORAGE_SIZE,
+        ),
+        storage_class_name=_optional_environment(
+            "GRANULAR_MEAN_STERLING_STORAGE_CLASS"
+        ),
+        service_account_name=_optional_environment(
+            "GRANULAR_MEAN_STERLING_SERVICE_ACCOUNT"
+        ),
+        image_pull_secrets=(pull_secret,) if pull_secret else (),
+        secret_environment={
+            environment_key: (
+                os.environ.get(
+                    "GRANULAR_MEAN_STERLING_CODEX_SECRET",
+                    DEFAULT_STERLING_CODEX_SECRET,
+                ),
+                environment_key,
+            )
+        },
+        max_parallel=max_parallel,
     )
 
 
@@ -109,11 +154,18 @@ def build_campaign(
         collection_retry_seconds=60,
         collection_max_attempts=5,
         max_pause_seconds=24 * 60 * 60,
+        backend_image=_optional_environment(
+            "GRANULAR_MEAN_AGENT_IMAGE"
+        ),
+    )
+    profile = _sterling_profile(
+        agent_image=plan.backend_image,
+        max_parallel=max_parallel,
     )
     return CampaignRunner(
         definition,
         contract,
         plan,
-        LocalBackend(max_parallel=max_parallel),
+        KubernetesBackend(profile),
         workload_factory=campaign_workload_factory,
     )
