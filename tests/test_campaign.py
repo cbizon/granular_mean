@@ -120,6 +120,7 @@ def test_reviewed_definition_defaults_to_azure_sol_xhigh() -> None:
         Path(sys.executable).with_name("granular-mean-codex")
     )
     assert review.required is False
+    assert "workspace/**/*.py" in review.trial_evidence_paths
 
 
 def test_campaign_rejects_unreviewed_definition(

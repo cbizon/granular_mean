@@ -28,6 +28,7 @@ REVIEW_EVIDENCE = (
     "workspace/PROMPT.md",
     "workspace/cases.json",
     "workspace/environment.json",
+    "workspace/**/*.py",
     "workspace/submission/manifest.json",
     "workspace/submission/run-status.json",
     "evaluation/results.json",
