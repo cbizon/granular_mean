@@ -28,6 +28,33 @@ def codex_environment_key() -> str:
     )
 
 
+def azure_codex_settings(
+    model: str,
+    effort: str | None,
+    *,
+    allowed_efforts: tuple[str, ...] | None = None,
+) -> ProviderSettings:
+    return ProviderSettings(
+        provider="codex",
+        model=model,
+        effort=effort,
+        allowed_efforts=allowed_efforts,
+        provider_id=os.environ.get(
+            "GRANULAR_MEAN_CODEX_PROVIDER_ID",
+            DEFAULT_CODEX_PROVIDER_ID,
+        ),
+        provider_name=os.environ.get(
+            "GRANULAR_MEAN_CODEX_PROVIDER_NAME",
+            DEFAULT_CODEX_PROVIDER_NAME,
+        ),
+        base_url=os.environ.get(
+            "GRANULAR_MEAN_CODEX_BASE_URL",
+            DEFAULT_CODEX_BASE_URL,
+        ),
+        environment_key=codex_environment_key(),
+    )
+
+
 def provider_settings(identity: TrialIdentity) -> ProviderSettings:
     if identity.provider != "codex":
         raise ValueError(
@@ -44,24 +71,10 @@ def provider_settings(identity: TrialIdentity) -> ProviderSettings:
             f"{CODEX_MODEL} effort must be one of {CODEX_EFFORTS}, got "
             f"{identity.effort!r}"
         )
-    return ProviderSettings(
-        provider=identity.provider,
-        model=identity.model,
-        effort=identity.effort,
+    return azure_codex_settings(
+        identity.model,
+        identity.effort,
         allowed_efforts=CODEX_EFFORTS,
-        provider_id=os.environ.get(
-            "GRANULAR_MEAN_CODEX_PROVIDER_ID",
-            DEFAULT_CODEX_PROVIDER_ID,
-        ),
-        provider_name=os.environ.get(
-            "GRANULAR_MEAN_CODEX_PROVIDER_NAME",
-            DEFAULT_CODEX_PROVIDER_NAME,
-        ),
-        base_url=os.environ.get(
-            "GRANULAR_MEAN_CODEX_BASE_URL",
-            DEFAULT_CODEX_BASE_URL,
-        ),
-        environment_key=codex_environment_key(),
     )
 
 

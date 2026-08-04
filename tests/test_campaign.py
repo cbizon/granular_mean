@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,7 @@ from granular_mean.agent import (
     CODEX_EFFORTS,
     CODEX_MODEL,
     DEFAULT_CODEX_BASE_URL,
+    azure_codex_settings,
     provider_settings,
 )
 from granular_mean.campaign import (
@@ -24,7 +26,12 @@ from granular_mean.codex_wrapper import (
     prepare_arguments,
     strict_output_schema,
 )
-from granular_mean.definition import build_definition
+from granular_mean.definition import (
+    DEFAULT_REVIEWER_EFFORT,
+    DEFAULT_REVIEWER_MODEL,
+    build_definition,
+    build_reviewed_definition,
+)
 
 
 def test_campaign_runs_sol_at_every_supported_effort() -> None:
@@ -42,7 +49,7 @@ def test_campaign_uses_local_backend_and_configured_parallelism(
 ) -> None:
     monkeypatch.setenv("GRANULAR_MEAN_CAMPAIGN_ROOT", str(tmp_path))
     monkeypatch.setenv("GRANULAR_MEAN_MAX_PARALLEL", "2")
-    definition = build_definition()
+    definition = build_reviewed_definition()
     contract = load_output_contract(definition.contract_path)
 
     runner = build_campaign(definition, contract)
@@ -60,7 +67,7 @@ def test_campaign_workload_uses_azure_launcher(
 ) -> None:
     monkeypatch.setenv("GRANULAR_MEAN_CAMPAIGN_ROOT", str(tmp_path))
     monkeypatch.setenv("AZURE_OPENAI_API_KEY", "test-key")
-    definition = build_definition()
+    definition = build_reviewed_definition()
     contract = load_output_contract(definition.contract_path)
     runner = build_campaign(definition, contract)
     campaign_trial = runner.plan.trials[0]
@@ -100,6 +107,36 @@ def test_provider_settings_pin_model_efforts_and_azure() -> None:
     assert settings.environment_key == "AZURE_OPENAI_API_KEY"
 
 
+def test_reviewed_definition_defaults_to_azure_sol_xhigh() -> None:
+    definition = build_reviewed_definition()
+    review = definition.qualitative_review
+
+    assert review is not None
+    assert review.reviewer == azure_codex_settings(
+        DEFAULT_REVIEWER_MODEL,
+        DEFAULT_REVIEWER_EFFORT,
+    )
+    assert review.reviewer_executable == str(
+        Path(sys.executable).with_name("granular-mean-codex")
+    )
+    assert review.required is False
+
+
+def test_campaign_rejects_unreviewed_definition(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("GRANULAR_MEAN_CAMPAIGN_ROOT", str(tmp_path))
+    definition = build_definition()
+    contract = load_output_contract(definition.contract_path)
+
+    with pytest.raises(
+        RuntimeError,
+        match="campaigns require qualitative review",
+    ):
+        build_campaign(definition, contract)
+
+
 @pytest.mark.parametrize("effort", [None, "max", "ultra"])
 def test_provider_settings_reject_unsupported_effort(
     effort: str | None,
@@ -121,7 +158,7 @@ def test_campaign_rejects_invalid_parallelism(
 ) -> None:
     monkeypatch.setenv("GRANULAR_MEAN_CAMPAIGN_ROOT", str(tmp_path))
     monkeypatch.setenv("GRANULAR_MEAN_MAX_PARALLEL", "0")
-    definition = build_definition()
+    definition = build_reviewed_definition()
     contract = load_output_contract(definition.contract_path)
 
     with pytest.raises(

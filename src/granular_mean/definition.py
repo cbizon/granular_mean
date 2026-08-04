@@ -15,8 +15,15 @@ from brunner import (
     RuntimeDefaults,
 )
 
+from granular_mean.agent import (
+    CODEX_MODEL,
+    azure_codex_settings,
+)
+
 
 ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_REVIEWER_MODEL = CODEX_MODEL
+DEFAULT_REVIEWER_EFFORT = "xhigh"
 REVIEW_EVIDENCE = (
     "workspace/PROMPT.md",
     "workspace/cases.json",
@@ -83,29 +90,37 @@ def build_definition() -> BenchmarkDefinition:
 
 
 def build_reviewed_definition() -> BenchmarkDefinition:
-    reviewer_model = os.environ.get(
-        "GRANULAR_MEAN_REVIEWER_MODEL"
+    reviewer_provider = os.environ.get(
+        "GRANULAR_MEAN_REVIEWER_PROVIDER",
+        "codex",
     )
-    if not reviewer_model:
-        raise RuntimeError(
-            "GRANULAR_MEAN_REVIEWER_MODEL is required for "
-            "build_reviewed_definition"
+    reviewer_model = os.environ.get(
+        "GRANULAR_MEAN_REVIEWER_MODEL",
+        DEFAULT_REVIEWER_MODEL,
+    )
+    reviewer_effort = os.environ.get(
+        "GRANULAR_MEAN_REVIEWER_EFFORT",
+        DEFAULT_REVIEWER_EFFORT,
+    )
+    reviewer = (
+        azure_codex_settings(reviewer_model, reviewer_effort)
+        if reviewer_provider == "codex"
+        else ProviderSettings(
+            provider=reviewer_provider,
+            model=reviewer_model,
+            effort=reviewer_effort,
+        )
+    )
+    reviewer_executable = os.environ.get(
+        "GRANULAR_MEAN_REVIEWER_EXECUTABLE"
+    )
+    if reviewer_executable is None and reviewer_provider == "codex":
+        reviewer_executable = str(
+            Path(sys.executable).with_name("granular-mean-codex")
         )
     review = QualitativeReviewDefinition(
-        reviewer=ProviderSettings(
-            provider=os.environ.get(
-                "GRANULAR_MEAN_REVIEWER_PROVIDER",
-                "codex",
-            ),
-            model=reviewer_model,
-            effort=os.environ.get(
-                "GRANULAR_MEAN_REVIEWER_EFFORT",
-                "xhigh",
-            ),
-        ),
-        reviewer_executable=os.environ.get(
-            "GRANULAR_MEAN_REVIEWER_EXECUTABLE"
-        ),
+        reviewer=reviewer,
+        reviewer_executable=reviewer_executable,
         required=False,
         run_if_evaluation_failed=True,
         trial_evidence_paths=REVIEW_EVIDENCE,

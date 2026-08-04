@@ -88,11 +88,10 @@ from the published Figure 1 panels. Set
 `GRANULAR_MEAN_INCLUDE_OVERLAPS=false` only when deliberately skipping the
 expensive overlap diagnostic.
 
-To add Brunner's standard qualitative review, select the reviewed definition
-and provide an explicit reviewer model:
+The base definition runs only the deterministic evaluator. Select the reviewed
+definition to also run Brunner's standard qualitative review:
 
 ```bash
-GRANULAR_MEAN_REVIEWER_MODEL=REVIEWER_MODEL \
 UV_CACHE_DIR=.uv-cache uv run brunner \
   --benchmark granular_mean.definition:build_reviewed_definition \
   local-run runs/ \
@@ -103,7 +102,12 @@ UV_CACHE_DIR=.uv-cache uv run brunner \
 
 Review evidence includes the prompt, manifests, deterministic results,
 transcript, timing, usage, and status. It intentionally excludes the
-multi-gigabyte trajectory artifacts.
+multi-gigabyte trajectory artifacts. The reviewer defaults to
+`gpt-5.6-sol` at `xhigh` through the same RENCI Azure provider configuration.
+Override `GRANULAR_MEAN_REVIEWER_PROVIDER`,
+`GRANULAR_MEAN_REVIEWER_MODEL`, `GRANULAR_MEAN_REVIEWER_EFFORT`, or
+`GRANULAR_MEAN_REVIEWER_EXECUTABLE` when a different fixed reviewer is
+required.
 
 ## Campaign
 
@@ -119,11 +123,11 @@ Set the API key, initialize the campaign, and run it with:
 export AZURE_OPENAI_API_KEY=...
 
 UV_CACHE_DIR=.uv-cache uv run brunner \
-  --benchmark granular_mean.definition \
+  --benchmark granular_mean.definition:build_reviewed_definition \
   campaign-init granular_mean.campaign
 
 UV_CACHE_DIR=.uv-cache uv run brunner \
-  --benchmark granular_mean.definition \
+  --benchmark granular_mean.definition:build_reviewed_definition \
   campaign-run granular_mean.campaign \
   --poll-seconds 30
 ```
@@ -132,6 +136,10 @@ Runs are sequential by default because each simulation is CPU- and
 storage-intensive. Set `GRANULAR_MEAN_MAX_PARALLEL` to a positive integer to
 increase concurrency. Set `GRANULAR_MEAN_CAMPAIGN_ROOT` to change the default
 state directory at `campaign-runs/sol-5-6-all-efforts-v1`.
+
+Campaign construction fails fast when the unreviewed definition is selected,
+so newly added models or effort levels cannot silently skip qualitative
+assessment.
 
 The launcher pins the campaign to the `azure` Codex provider, the
 `gpt-5.6-sol` model, and the four effort levels above. Override

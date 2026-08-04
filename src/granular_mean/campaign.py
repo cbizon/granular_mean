@@ -86,6 +86,11 @@ def build_campaign(
     definition: BenchmarkDefinition,
     contract: OutputContract,
 ) -> CampaignRunner:
+    if definition.qualitative_review is None:
+        raise RuntimeError(
+            "granular campaigns require qualitative review; use "
+            "granular_mean.definition:build_reviewed_definition"
+        )
     root = Path(
         os.environ.get(
             "GRANULAR_MEAN_CAMPAIGN_ROOT",
