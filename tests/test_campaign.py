@@ -10,6 +10,7 @@ from brunner.backends import KubernetesBackend
 from brunner.contract import load_output_contract
 from brunner.trial import TrialIdentity
 
+from granular_mean import agent as agent_module
 from granular_mean.agent import (
     CODEX_EFFORTS,
     CODEX_MODEL,
@@ -19,8 +20,10 @@ from granular_mean.agent import (
 )
 from granular_mean.campaign import (
     CAMPAIGN_ID,
+    DEFAULT_AGENT_IMAGE,
     DEFAULT_STERLING_CODEX_SECRET,
     DEFAULT_STERLING_NAMESPACE,
+    NESTED_SANDBOX_BYPASS_ENVIRONMENT,
     build_campaign,
     build_campaign_trials,
 )
@@ -45,6 +48,76 @@ def test_campaign_runs_sol_at_every_supported_effort() -> None:
     assert len({trial.test_id for trial in trials}) == len(CODEX_EFFORTS)
 
 
+def test_remote_agent_forwards_shutdown_to_runner(
+    monkeypatch,
+    tmp_path,
+    capsys,
+) -> None:
+    identity = TrialIdentity(
+        test_id="sol-low",
+        provider="codex",
+        model=CODEX_MODEL,
+        effort="low",
+    )
+    registered_handlers: dict[int, object] = {}
+    previous_handlers = {
+        agent_module.signal.SIGTERM: object(),
+        agent_module.signal.SIGINT: object(),
+    }
+
+    def fake_signal(signum: int, handler: object) -> object:
+        if callable(handler):
+            registered_handlers[signum] = handler
+        return previous_handlers[signum]
+
+    def fake_run_staged_trial(
+        trial: Path,
+        settings: object,
+        *,
+        executable: str,
+        stop_requested: object,
+    ) -> dict[str, str]:
+        assert trial == tmp_path.resolve()
+        assert settings == "provider-settings"
+        assert executable.endswith("granular-mean-codex")
+        handler = registered_handlers[agent_module.signal.SIGTERM]
+        assert callable(handler)
+        handler(agent_module.signal.SIGTERM, None)
+        assert stop_requested.is_set()
+        return {"status": "interrupted"}
+
+    monkeypatch.setattr(agent_module.signal, "signal", fake_signal)
+    monkeypatch.setattr(
+        agent_module,
+        "load_trial_identity",
+        lambda trial: identity,
+    )
+    monkeypatch.setattr(
+        agent_module,
+        "provider_settings",
+        lambda loaded: (
+            "provider-settings"
+            if loaded == identity
+            else pytest.fail("unexpected identity")
+        ),
+    )
+    monkeypatch.setattr(
+        agent_module,
+        "run_staged_trial",
+        fake_run_staged_trial,
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["granular-mean-agent", str(tmp_path)],
+    )
+
+    assert agent_module.main() == 0
+    assert json.loads(capsys.readouterr().out) == {
+        "status": "interrupted"
+    }
+
+
 def test_campaign_uses_sterling_backend_and_configured_parallelism(
     monkeypatch,
     tmp_path,
@@ -65,12 +138,16 @@ def test_campaign_uses_sterling_backend_and_configured_parallelism(
     assert runner.backend.profile.namespace == DEFAULT_STERLING_NAMESPACE
     assert runner.backend.profile.agent_image == "agent:test"
     assert runner.backend.profile.artifact_reader_image == "agent:test"
+    assert runner.backend.profile.image_pull_secrets == ()
     assert runner.backend.profile.max_parallel == 2
     assert runner.backend.profile.secret_environment == {
         "AZURE_OPENAI_API_KEY": (
             DEFAULT_STERLING_CODEX_SECRET,
             "AZURE_OPENAI_API_KEY",
         )
+    }
+    assert runner.backend.profile.nonsecret_environment == {
+        NESTED_SANDBOX_BYPASS_ENVIRONMENT: "true",
     }
 
 
@@ -100,8 +177,22 @@ def test_campaign_workload_uses_containerized_azure_launcher(
         "granular_mean.agent",
         "/brunner/trial",
     )
-    assert workload.environment == {}
     assert workload.image == "agent:test"
+
+
+def test_campaign_defaults_to_pinned_agent_image(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("GRANULAR_MEAN_CAMPAIGN_ROOT", str(tmp_path))
+    monkeypatch.delenv("GRANULAR_MEAN_AGENT_IMAGE", raising=False)
+    definition = build_reviewed_definition()
+    contract = load_output_contract(definition.contract_path)
+
+    runner = build_campaign(definition, contract)
+
+    assert runner.plan.backend_image == DEFAULT_AGENT_IMAGE
+    assert runner.backend.profile.agent_image == DEFAULT_AGENT_IMAGE
 
 
 def test_provider_settings_pin_model_efforts_and_azure() -> None:
@@ -118,6 +209,106 @@ def test_provider_settings_pin_model_efforts_and_azure() -> None:
     assert settings.provider_id == "azure"
     assert settings.base_url == DEFAULT_CODEX_BASE_URL
     assert settings.environment_key == "AZURE_OPENAI_API_KEY"
+
+
+def test_codex_wrapper_bypasses_initial_nested_sandbox(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv(
+        NESTED_SANDBOX_BYPASS_ENVIRONMENT,
+        "true",
+    )
+
+    arguments = prepare_arguments(
+        [
+            "exec",
+            "--json",
+            "--sandbox",
+            "workspace-write",
+            "--model",
+            CODEX_MODEL,
+        ]
+    )
+
+    assert arguments == [
+        "exec",
+        "--dangerously-bypass-approvals-and-sandbox",
+        "--json",
+        "--model",
+        CODEX_MODEL,
+    ]
+
+
+def test_codex_wrapper_bypasses_resumed_nested_sandbox(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv(
+        NESTED_SANDBOX_BYPASS_ENVIRONMENT,
+        "true",
+    )
+
+    arguments = prepare_arguments(
+        [
+            "exec",
+            "resume",
+            "--json",
+            "--last",
+            "-",
+        ]
+    )
+
+    assert arguments == [
+        "exec",
+        "--dangerously-bypass-approvals-and-sandbox",
+        "resume",
+        "--json",
+        "--last",
+        "-",
+    ]
+
+
+def test_codex_wrapper_keeps_local_review_sandbox(
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv(
+        NESTED_SANDBOX_BYPASS_ENVIRONMENT,
+        raising=False,
+    )
+
+    arguments = prepare_arguments(
+        [
+            "exec",
+            "--json",
+            "--sandbox",
+            "read-only",
+            "--model",
+            CODEX_MODEL,
+        ]
+    )
+
+    assert arguments == [
+        "exec",
+        "--json",
+        "--sandbox",
+        "read-only",
+        "--model",
+        CODEX_MODEL,
+    ]
+
+
+def test_codex_wrapper_requires_initial_sandbox_when_bypassing(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv(
+        NESTED_SANDBOX_BYPASS_ENVIRONMENT,
+        "true",
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="does not include --sandbox",
+    ):
+        prepare_arguments(["exec", "--json"])
 
 
 def test_reviewed_definition_defaults_to_azure_sol_xhigh() -> None:

@@ -7,6 +7,12 @@ from pathlib import Path
 from typing import Any
 
 
+TRUE_VALUES = {"1", "true", "yes"}
+NESTED_SANDBOX_BYPASS_ENVIRONMENT = (
+    "GRANULAR_MEAN_CODEX_BYPASS_NESTED_SANDBOX"
+)
+
+
 def _json_type(value: object) -> str | None:
     if isinstance(value, str):
         return "string"
@@ -61,16 +67,15 @@ def strict_output_schema(value: Any) -> Any:
     return converted
 
 
-def prepare_arguments(arguments: list[str]) -> list[str]:
-    prepared = list(arguments)
+def _prepare_output_schema(arguments: list[str]) -> list[str]:
     try:
-        schema_index = prepared.index("--output-schema") + 1
+        schema_index = arguments.index("--output-schema") + 1
     except ValueError:
-        return prepared
-    if schema_index >= len(prepared):
+        return arguments
+    if schema_index >= len(arguments):
         raise RuntimeError("Codex --output-schema argument has no value")
 
-    source = Path(prepared[schema_index])
+    source = Path(arguments[schema_index])
     schema = json.loads(source.read_text())
     codex_home = Path(os.environ.get("CODEX_HOME", source.parent))
     destination = codex_home / "brunner-strict-output-schema.json"
@@ -78,8 +83,49 @@ def prepare_arguments(arguments: list[str]) -> list[str]:
     destination.write_text(
         json.dumps(strict_output_schema(schema), indent=2) + "\n"
     )
-    prepared[schema_index] = str(destination)
+    arguments[schema_index] = str(destination)
+    return arguments
+
+
+def _bypass_nested_sandbox(arguments: list[str]) -> list[str]:
+    prepared: list[str] = []
+    sandbox_found = False
+    index = 0
+    while index < len(arguments):
+        argument = arguments[index]
+        if argument != "--sandbox":
+            prepared.append(argument)
+            index += 1
+            continue
+        if index + 1 >= len(arguments):
+            raise RuntimeError("Codex --sandbox argument has no value")
+        sandbox_found = True
+        index += 2
+
+    if "exec" not in prepared:
+        return prepared
+    exec_index = prepared.index("exec")
+    is_resume = (
+        exec_index + 1 < len(prepared)
+        and prepared[exec_index + 1] == "resume"
+    )
+    if not sandbox_found and not is_resume:
+        raise RuntimeError("Codex command does not include --sandbox")
+    prepared.insert(
+        exec_index + 1,
+        "--dangerously-bypass-approvals-and-sandbox",
+    )
     return prepared
+
+
+def prepare_arguments(arguments: list[str]) -> list[str]:
+    prepared = list(arguments)
+    if os.environ.get(
+        NESTED_SANDBOX_BYPASS_ENVIRONMENT,
+        "false",
+    ).lower() in TRUE_VALUES:
+        prepared = _bypass_nested_sandbox(prepared)
+    return _prepare_output_schema(prepared)
 
 
 def main() -> None:

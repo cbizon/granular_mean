@@ -29,9 +29,16 @@ from granular_mean.definition import ROOT
 CAMPAIGN_VARIANT = "sol-5-6-all-efforts-v1"
 CAMPAIGN_ID = f"granular-figure1-{CAMPAIGN_VARIANT}"
 DEFAULT_MAX_PARALLEL = 1
+DEFAULT_AGENT_IMAGE = (
+    "ghcr.io/cbizon/granular-mean-agent@"
+    "sha256:23d92dec13f79746d6f8ee5339d6877720c412ffe2507eca7a808dfd4cf13c65"
+)
 DEFAULT_STERLING_NAMESPACE = "bizon"
 DEFAULT_STERLING_STORAGE_SIZE = "20Gi"
 DEFAULT_STERLING_CODEX_SECRET = "balls-bench-codex-azure"
+NESTED_SANDBOX_BYPASS_ENVIRONMENT = (
+    "GRANULAR_MEAN_CODEX_BYPASS_NESTED_SANDBOX"
+)
 
 
 def build_campaign_trials() -> tuple[CampaignTrial, ...]:
@@ -123,6 +130,9 @@ def _sterling_profile(
                 environment_key,
             )
         },
+        nonsecret_environment={
+            NESTED_SANDBOX_BYPASS_ENVIRONMENT: "true",
+        },
         max_parallel=max_parallel,
     )
 
@@ -154,8 +164,9 @@ def build_campaign(
         collection_retry_seconds=60,
         collection_max_attempts=5,
         max_pause_seconds=24 * 60 * 60,
-        backend_image=_optional_environment(
-            "GRANULAR_MEAN_AGENT_IMAGE"
+        backend_image=(
+            _optional_environment("GRANULAR_MEAN_AGENT_IMAGE")
+            or DEFAULT_AGENT_IMAGE
         ),
     )
     profile = _sterling_profile(
