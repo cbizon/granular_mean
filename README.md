@@ -120,12 +120,30 @@ The campaign uses Brunner's Kubernetes backend on the current
 `bizon@sterling` context. Candidate agents run inside a Sterling container and
 use the RENCI Azure OpenAI provider. The namespace defaults to `bizon`, and the
 Codex key is read from the `balls-bench-codex-azure` Kubernetes Secret.
+The default agent image is the public
+`ghcr.io/cbizon/granular-mean-agent:brunner-12963da` build, pinned by digest
+in the campaign.
 
-Set the immutable agent image, initialize the campaign, and run it with:
+Build and publish the Linux/AMD64 agent image with:
 
 ```bash
-export GRANULAR_MEAN_AGENT_IMAGE=ghcr.io/cbizon/granular-mean-agent:IMAGE_TAG
+docker build \
+  --platform linux/amd64 \
+  -f containers/agent.Dockerfile \
+  -t ghcr.io/cbizon/granular-mean-agent:brunner-12963da \
+  .
+docker push ghcr.io/cbizon/granular-mean-agent:brunner-12963da
+```
 
+The image pins Brunner commit `12963da`, Codex CLI `0.144.1`, the benchmark's
+scientific Python stack, and a UID 1000 runtime compatible with Brunner's
+read-only Kubernetes pod security context. The pod configuration explicitly
+bypasses Codex's unavailable nested sandbox; local qualitative reviews retain
+their read-only Codex sandbox.
+
+Initialize and run the campaign with:
+
+```bash
 UV_CACHE_DIR=.uv-cache uv run brunner \
   --benchmark granular_mean.definition:build_reviewed_definition \
   campaign-init granular_mean.campaign
@@ -136,6 +154,7 @@ UV_CACHE_DIR=.uv-cache uv run brunner \
   --poll-seconds 30
 ```
 
+Set `GRANULAR_MEAN_AGENT_IMAGE` only to override the pinned default image.
 Runs are sequential by default because each simulation is CPU- and
 storage-intensive. Set `GRANULAR_MEAN_MAX_PARALLEL` to a positive integer to
 increase concurrency. Set `GRANULAR_MEAN_CAMPAIGN_ROOT` to change the default
