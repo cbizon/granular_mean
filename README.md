@@ -116,11 +116,15 @@ current configured model catalog: `low`, `medium`, `high`, and `xhigh`.
 Trial IDs are stable, so rerunning the same command resumes the existing
 campaign state.
 
-The campaign uses Brunner's local backend and the RENCI Azure OpenAI provider.
-Set the API key, initialize the campaign, and run it with:
+The campaign uses Brunner's Kubernetes backend on the current
+`bizon@sterling` context. Candidate agents run inside a Sterling container and
+use the RENCI Azure OpenAI provider. The namespace defaults to `bizon`, and the
+Codex key is read from the `balls-bench-codex-azure` Kubernetes Secret.
+
+Set the immutable agent image, initialize the campaign, and run it with:
 
 ```bash
-export AZURE_OPENAI_API_KEY=...
+export GRANULAR_MEAN_AGENT_IMAGE=ghcr.io/cbizon/granular-mean-agent:IMAGE_TAG
 
 UV_CACHE_DIR=.uv-cache uv run brunner \
   --benchmark granular_mean.definition:build_reviewed_definition \
@@ -136,6 +140,14 @@ Runs are sequential by default because each simulation is CPU- and
 storage-intensive. Set `GRANULAR_MEAN_MAX_PARALLEL` to a positive integer to
 increase concurrency. Set `GRANULAR_MEAN_CAMPAIGN_ROOT` to change the default
 state directory at `campaign-runs/sol-5-6-all-efforts-v1`.
+
+Sterling settings can be overridden with
+`GRANULAR_MEAN_STERLING_NAMESPACE`,
+`GRANULAR_MEAN_STERLING_STORAGE_SIZE`,
+`GRANULAR_MEAN_STERLING_STORAGE_CLASS`,
+`GRANULAR_MEAN_STERLING_SERVICE_ACCOUNT`,
+`GRANULAR_MEAN_STERLING_IMAGE_PULL_SECRET`, and
+`GRANULAR_MEAN_STERLING_CODEX_SECRET`.
 
 Campaign construction fails fast when the unreviewed definition is selected,
 so newly added models or effort levels cannot silently skip qualitative
