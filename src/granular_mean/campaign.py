@@ -31,7 +31,7 @@ CAMPAIGN_ID = f"granular-figure1-{CAMPAIGN_VARIANT}"
 DEFAULT_MAX_PARALLEL = 1
 DEFAULT_AGENT_IMAGE = (
     "ghcr.io/cbizon/granular-mean-agent@"
-    "sha256:e704a69bbc003cf5f90db1613b65a51a826c73cd8b548a20c442531a4a0f985b"
+    "sha256:3b70fca3845cc44f7fb7416b1eac5f082f1495e917985144bfbb26e752baad97"
 )
 DEFAULT_STERLING_NAMESPACE = "bizon"
 DEFAULT_STERLING_STORAGE_SIZE = "20Gi"
@@ -40,6 +40,8 @@ DEFAULT_AGENT_CPU_REQUEST = "2"
 DEFAULT_AGENT_CPU_LIMIT = "8"
 DEFAULT_AGENT_MEMORY_REQUEST = "8Gi"
 DEFAULT_AGENT_MEMORY_LIMIT = "32Gi"
+DEFAULT_AGENT_EPHEMERAL_STORAGE_REQUEST = "1Gi"
+DEFAULT_AGENT_EPHEMERAL_STORAGE_LIMIT = "3Gi"
 NESTED_SANDBOX_BYPASS_ENVIRONMENT = (
     "GRANULAR_MEAN_CODEX_BYPASS_NESTED_SANDBOX"
 )
@@ -194,6 +196,14 @@ def build_campaign(
         memory_limit=_resource_environment(
             "GRANULAR_MEAN_AGENT_MEMORY_LIMIT",
             DEFAULT_AGENT_MEMORY_LIMIT,
+        ),
+        ephemeral_storage_request=_resource_environment(
+            "GRANULAR_MEAN_AGENT_EPHEMERAL_STORAGE_REQUEST",
+            DEFAULT_AGENT_EPHEMERAL_STORAGE_REQUEST,
+        ),
+        ephemeral_storage_limit=_resource_environment(
+            "GRANULAR_MEAN_AGENT_EPHEMERAL_STORAGE_LIMIT",
+            DEFAULT_AGENT_EPHEMERAL_STORAGE_LIMIT,
         ),
     )
     profile = _sterling_profile(
