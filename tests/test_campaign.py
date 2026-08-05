@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from brunner.backends import KubernetesBackend
+from brunner.backends.kubernetes import render_job
 from brunner.contract import load_output_contract
 from brunner.trial import TrialIdentity
 
@@ -20,7 +21,11 @@ from granular_mean.agent import (
 )
 from granular_mean.campaign import (
     CAMPAIGN_ID,
+    DEFAULT_AGENT_CPU_LIMIT,
+    DEFAULT_AGENT_CPU_REQUEST,
     DEFAULT_AGENT_IMAGE,
+    DEFAULT_AGENT_MEMORY_LIMIT,
+    DEFAULT_AGENT_MEMORY_REQUEST,
     DEFAULT_STERLING_CODEX_SECRET,
     DEFAULT_STERLING_NAMESPACE,
     NESTED_SANDBOX_BYPASS_ENVIRONMENT,
@@ -178,6 +183,57 @@ def test_campaign_workload_uses_containerized_azure_launcher(
         "/brunner/trial",
     )
     assert workload.image == "agent:test"
+    assert workload.cpu_request == DEFAULT_AGENT_CPU_REQUEST
+    assert workload.cpu_limit == DEFAULT_AGENT_CPU_LIMIT
+    assert workload.memory_request == DEFAULT_AGENT_MEMORY_REQUEST
+    assert workload.memory_limit == DEFAULT_AGENT_MEMORY_LIMIT
+    job = render_job(
+        "granular-test",
+        "granular-test-data",
+        workload,
+        runner.backend.profile,
+        {},
+    )
+    resources = job["spec"]["template"]["spec"]["containers"][0]["resources"]
+    assert resources == {
+        "requests": {
+            "cpu": DEFAULT_AGENT_CPU_REQUEST,
+            "memory": DEFAULT_AGENT_MEMORY_REQUEST,
+        },
+        "limits": {
+            "cpu": DEFAULT_AGENT_CPU_LIMIT,
+            "memory": DEFAULT_AGENT_MEMORY_LIMIT,
+        },
+    }
+
+
+def test_campaign_workload_accepts_resource_overrides(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("GRANULAR_MEAN_CAMPAIGN_ROOT", str(tmp_path))
+    monkeypatch.setenv("GRANULAR_MEAN_AGENT_CPU_REQUEST", "1500m")
+    monkeypatch.setenv("GRANULAR_MEAN_AGENT_CPU_LIMIT", "6")
+    monkeypatch.setenv("GRANULAR_MEAN_AGENT_MEMORY_REQUEST", "12Gi")
+    monkeypatch.setenv("GRANULAR_MEAN_AGENT_MEMORY_LIMIT", "24Gi")
+    definition = build_reviewed_definition()
+    contract = load_output_contract(definition.contract_path)
+    runner = build_campaign(definition, contract)
+    campaign_trial = runner.plan.trials[0]
+    trial = tmp_path / campaign_trial.test_id
+
+    workload = runner.workload_factory(
+        trial,
+        campaign_trial,
+        runner.plan,
+        definition,
+        "kubernetes",
+    )
+
+    assert workload.cpu_request == "1500m"
+    assert workload.cpu_limit == "6"
+    assert workload.memory_request == "12Gi"
+    assert workload.memory_limit == "24Gi"
 
 
 def test_campaign_defaults_to_pinned_agent_image(

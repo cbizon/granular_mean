@@ -31,11 +31,15 @@ CAMPAIGN_ID = f"granular-figure1-{CAMPAIGN_VARIANT}"
 DEFAULT_MAX_PARALLEL = 1
 DEFAULT_AGENT_IMAGE = (
     "ghcr.io/cbizon/granular-mean-agent@"
-    "sha256:23d92dec13f79746d6f8ee5339d6877720c412ffe2507eca7a808dfd4cf13c65"
+    "sha256:e704a69bbc003cf5f90db1613b65a51a826c73cd8b548a20c442531a4a0f985b"
 )
 DEFAULT_STERLING_NAMESPACE = "bizon"
 DEFAULT_STERLING_STORAGE_SIZE = "20Gi"
 DEFAULT_STERLING_CODEX_SECRET = "balls-bench-codex-azure"
+DEFAULT_AGENT_CPU_REQUEST = "2"
+DEFAULT_AGENT_CPU_LIMIT = "8"
+DEFAULT_AGENT_MEMORY_REQUEST = "8Gi"
+DEFAULT_AGENT_MEMORY_LIMIT = "32Gi"
 NESTED_SANDBOX_BYPASS_ENVIRONMENT = (
     "GRANULAR_MEAN_CODEX_BYPASS_NESTED_SANDBOX"
 )
@@ -61,6 +65,13 @@ def _positive_integer_environment(name: str, default: int) -> int:
         raise RuntimeError(f"{name} must be an integer") from error
     if value < 1:
         raise RuntimeError(f"{name} must be positive")
+    return value
+
+
+def _resource_environment(name: str, default: str) -> str:
+    value = os.environ.get(name, default).strip()
+    if not value:
+        raise RuntimeError(f"{name} must not be empty")
     return value
 
 
@@ -167,6 +178,22 @@ def build_campaign(
         backend_image=(
             _optional_environment("GRANULAR_MEAN_AGENT_IMAGE")
             or DEFAULT_AGENT_IMAGE
+        ),
+        cpu_request=_resource_environment(
+            "GRANULAR_MEAN_AGENT_CPU_REQUEST",
+            DEFAULT_AGENT_CPU_REQUEST,
+        ),
+        cpu_limit=_resource_environment(
+            "GRANULAR_MEAN_AGENT_CPU_LIMIT",
+            DEFAULT_AGENT_CPU_LIMIT,
+        ),
+        memory_request=_resource_environment(
+            "GRANULAR_MEAN_AGENT_MEMORY_REQUEST",
+            DEFAULT_AGENT_MEMORY_REQUEST,
+        ),
+        memory_limit=_resource_environment(
+            "GRANULAR_MEAN_AGENT_MEMORY_LIMIT",
+            DEFAULT_AGENT_MEMORY_LIMIT,
         ),
     )
     profile = _sterling_profile(

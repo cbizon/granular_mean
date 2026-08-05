@@ -121,21 +121,21 @@ The campaign uses Brunner's Kubernetes backend on the current
 use the RENCI Azure OpenAI provider. The namespace defaults to `bizon`, and the
 Codex key is read from the `balls-bench-codex-azure` Kubernetes Secret.
 The default agent image is the public
-`ghcr.io/cbizon/granular-mean-agent:brunner-12963da` build, pinned by digest
+`ghcr.io/cbizon/granular-mean-agent:brunner-a9ff718` build, pinned by digest
 in the campaign.
 
 Build and publish the Linux/AMD64 agent image with:
 
 ```bash
-docker build \
+docker buildx build \
   --platform linux/amd64 \
   -f containers/agent.Dockerfile \
-  -t ghcr.io/cbizon/granular-mean-agent:brunner-12963da \
+  -t ghcr.io/cbizon/granular-mean-agent:brunner-a9ff718 \
+  --push \
   .
-docker push ghcr.io/cbizon/granular-mean-agent:brunner-12963da
 ```
 
-The image pins Brunner commit `12963da`, Codex CLI `0.144.1`, the benchmark's
+The image pins Brunner commit `a9ff718`, Codex CLI `0.144.1`, the benchmark's
 scientific Python stack, and a UID 1000 runtime compatible with Brunner's
 read-only Kubernetes pod security context. The pod configuration explicitly
 bypasses Codex's unavailable nested sandbox; local qualitative reviews retain
@@ -156,9 +156,14 @@ UV_CACHE_DIR=.uv-cache uv run brunner \
 
 Set `GRANULAR_MEAN_AGENT_IMAGE` only to override the pinned default image.
 Runs are sequential by default because each simulation is CPU- and
-storage-intensive. Set `GRANULAR_MEAN_MAX_PARALLEL` to a positive integer to
-increase concurrency. Set `GRANULAR_MEAN_CAMPAIGN_ROOT` to change the default
-state directory at `campaign-runs/sol-5-6-all-efforts-v1`.
+storage-intensive. Each agent requests 2 CPUs and 8 GiB of memory, with limits
+of 8 CPUs and 32 GiB. Override those benchmark requirements with
+`GRANULAR_MEAN_AGENT_CPU_REQUEST`, `GRANULAR_MEAN_AGENT_CPU_LIMIT`,
+`GRANULAR_MEAN_AGENT_MEMORY_REQUEST`, and
+`GRANULAR_MEAN_AGENT_MEMORY_LIMIT`. Set `GRANULAR_MEAN_MAX_PARALLEL` to a
+positive integer to increase concurrency. Set `GRANULAR_MEAN_CAMPAIGN_ROOT`
+to change the default state directory at
+`campaign-runs/sol-5-6-all-efforts-v1`.
 
 Sterling settings can be overridden with
 `GRANULAR_MEAN_STERLING_NAMESPACE`,
