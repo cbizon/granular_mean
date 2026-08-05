@@ -121,7 +121,7 @@ The campaign uses Brunner's Kubernetes backend on the current
 use the RENCI Azure OpenAI provider. The namespace defaults to `bizon`, and the
 Codex key is read from the `balls-bench-codex-azure` Kubernetes Secret.
 The default agent image is the public
-`ghcr.io/cbizon/granular-mean-agent:brunner-a9ff718` build, pinned by digest
+`ghcr.io/cbizon/granular-mean-agent:brunner-db9afcb` build, pinned by digest
 in the campaign.
 
 Build and publish the Linux/AMD64 agent image with:
@@ -130,12 +130,12 @@ Build and publish the Linux/AMD64 agent image with:
 docker buildx build \
   --platform linux/amd64 \
   -f containers/agent.Dockerfile \
-  -t ghcr.io/cbizon/granular-mean-agent:brunner-a9ff718 \
+  -t ghcr.io/cbizon/granular-mean-agent:brunner-db9afcb \
   --push \
   .
 ```
 
-The image pins Brunner commit `a9ff718`, Codex CLI `0.144.1`, the benchmark's
+The image pins Brunner commit `db9afcb`, Codex CLI `0.144.1`, the benchmark's
 scientific Python stack, and a UID 1000 runtime compatible with Brunner's
 read-only Kubernetes pod security context. The pod configuration explicitly
 bypasses Codex's unavailable nested sandbox; local qualitative reviews retain

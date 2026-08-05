@@ -273,6 +273,20 @@ def test_campaign_defaults_to_pinned_agent_image(
     assert runner.backend.profile.agent_image == DEFAULT_AGENT_IMAGE
 
 
+def test_agent_image_pins_current_brunner_build() -> None:
+    root = Path(__file__).parents[1]
+    dockerfile = (root / "containers" / "agent.Dockerfile").read_text()
+
+    assert (
+        "ARG BRUNNER_REF=db9afcb1b18dd9283250bbea87730ce8dd4db56e"
+        in dockerfile
+    )
+    assert DEFAULT_AGENT_IMAGE == (
+        "ghcr.io/cbizon/granular-mean-agent@"
+        "sha256:3b70fca3845cc44f7fb7416b1eac5f082f1495e917985144bfbb26e752baad97"
+    )
+
+
 def test_provider_settings_pin_model_efforts_and_azure() -> None:
     settings = provider_settings(
         TrialIdentity(
