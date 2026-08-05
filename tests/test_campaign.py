@@ -23,6 +23,8 @@ from granular_mean.campaign import (
     CAMPAIGN_ID,
     DEFAULT_AGENT_CPU_LIMIT,
     DEFAULT_AGENT_CPU_REQUEST,
+    DEFAULT_AGENT_EPHEMERAL_STORAGE_LIMIT,
+    DEFAULT_AGENT_EPHEMERAL_STORAGE_REQUEST,
     DEFAULT_AGENT_IMAGE,
     DEFAULT_AGENT_MEMORY_LIMIT,
     DEFAULT_AGENT_MEMORY_REQUEST,
@@ -187,6 +189,14 @@ def test_campaign_workload_uses_containerized_azure_launcher(
     assert workload.cpu_limit == DEFAULT_AGENT_CPU_LIMIT
     assert workload.memory_request == DEFAULT_AGENT_MEMORY_REQUEST
     assert workload.memory_limit == DEFAULT_AGENT_MEMORY_LIMIT
+    assert (
+        workload.ephemeral_storage_request
+        == DEFAULT_AGENT_EPHEMERAL_STORAGE_REQUEST
+    )
+    assert (
+        workload.ephemeral_storage_limit
+        == DEFAULT_AGENT_EPHEMERAL_STORAGE_LIMIT
+    )
     job = render_job(
         "granular-test",
         "granular-test-data",
@@ -199,10 +209,12 @@ def test_campaign_workload_uses_containerized_azure_launcher(
         "requests": {
             "cpu": DEFAULT_AGENT_CPU_REQUEST,
             "memory": DEFAULT_AGENT_MEMORY_REQUEST,
+            "ephemeral-storage": DEFAULT_AGENT_EPHEMERAL_STORAGE_REQUEST,
         },
         "limits": {
             "cpu": DEFAULT_AGENT_CPU_LIMIT,
             "memory": DEFAULT_AGENT_MEMORY_LIMIT,
+            "ephemeral-storage": DEFAULT_AGENT_EPHEMERAL_STORAGE_LIMIT,
         },
     }
 
@@ -216,6 +228,14 @@ def test_campaign_workload_accepts_resource_overrides(
     monkeypatch.setenv("GRANULAR_MEAN_AGENT_CPU_LIMIT", "6")
     monkeypatch.setenv("GRANULAR_MEAN_AGENT_MEMORY_REQUEST", "12Gi")
     monkeypatch.setenv("GRANULAR_MEAN_AGENT_MEMORY_LIMIT", "24Gi")
+    monkeypatch.setenv(
+        "GRANULAR_MEAN_AGENT_EPHEMERAL_STORAGE_REQUEST",
+        "750Mi",
+    )
+    monkeypatch.setenv(
+        "GRANULAR_MEAN_AGENT_EPHEMERAL_STORAGE_LIMIT",
+        "2Gi",
+    )
     definition = build_reviewed_definition()
     contract = load_output_contract(definition.contract_path)
     runner = build_campaign(definition, contract)
@@ -234,6 +254,8 @@ def test_campaign_workload_accepts_resource_overrides(
     assert workload.cpu_limit == "6"
     assert workload.memory_request == "12Gi"
     assert workload.memory_limit == "24Gi"
+    assert workload.ephemeral_storage_request == "750Mi"
+    assert workload.ephemeral_storage_limit == "2Gi"
 
 
 def test_campaign_defaults_to_pinned_agent_image(

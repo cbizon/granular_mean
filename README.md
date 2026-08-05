@@ -157,12 +157,16 @@ UV_CACHE_DIR=.uv-cache uv run brunner \
 Set `GRANULAR_MEAN_AGENT_IMAGE` only to override the pinned default image.
 Runs are sequential by default because each simulation is CPU- and
 storage-intensive. Each agent requests 2 CPUs and 8 GiB of memory, with limits
-of 8 CPUs and 32 GiB. Override those benchmark requirements with
+of 8 CPUs and 32 GiB. It also requests 1 GiB of ephemeral storage with a 3 GiB
+limit for `/tmp`, provider caches, container logs, and other local writable
+data. Override those benchmark requirements with
 `GRANULAR_MEAN_AGENT_CPU_REQUEST`, `GRANULAR_MEAN_AGENT_CPU_LIMIT`,
 `GRANULAR_MEAN_AGENT_MEMORY_REQUEST`, and
-`GRANULAR_MEAN_AGENT_MEMORY_LIMIT`. Set `GRANULAR_MEAN_MAX_PARALLEL` to a
-positive integer to increase concurrency. Set `GRANULAR_MEAN_CAMPAIGN_ROOT`
-to change the default state directory at
+`GRANULAR_MEAN_AGENT_MEMORY_LIMIT`,
+`GRANULAR_MEAN_AGENT_EPHEMERAL_STORAGE_REQUEST`, and
+`GRANULAR_MEAN_AGENT_EPHEMERAL_STORAGE_LIMIT`. Set
+`GRANULAR_MEAN_MAX_PARALLEL` to a positive integer to increase concurrency.
+Set `GRANULAR_MEAN_CAMPAIGN_ROOT` to change the default state directory at
 `campaign-runs/sol-5-6-all-efforts-v1`.
 
 Sterling settings can be overridden with
