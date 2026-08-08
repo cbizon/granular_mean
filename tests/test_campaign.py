@@ -28,6 +28,7 @@ from granular_mean.campaign import (
     DEFAULT_AGENT_IMAGE,
     DEFAULT_AGENT_MEMORY_LIMIT,
     DEFAULT_AGENT_MEMORY_REQUEST,
+    DEFAULT_STERLING_ARTIFACT_CHUNK_ATTEMPTS,
     DEFAULT_STERLING_ARTIFACT_CHUNK_BYTES,
     DEFAULT_STERLING_CODEX_SECRET,
     DEFAULT_STERLING_COMMAND_TIMEOUT_SECONDS,
@@ -154,6 +155,10 @@ def test_campaign_uses_sterling_backend_and_configured_parallelism(
         == DEFAULT_STERLING_ARTIFACT_CHUNK_BYTES
     )
     assert (
+        runner.backend.profile.artifact_chunk_attempts
+        == DEFAULT_STERLING_ARTIFACT_CHUNK_ATTEMPTS
+    )
+    assert (
         runner.backend.profile.command_timeout_seconds
         == DEFAULT_STERLING_COMMAND_TIMEOUT_SECONDS
     )
@@ -175,7 +180,11 @@ def test_campaign_accepts_artifact_stream_overrides(
     monkeypatch.setenv("GRANULAR_MEAN_CAMPAIGN_ROOT", str(tmp_path))
     monkeypatch.setenv(
         "GRANULAR_MEAN_STERLING_ARTIFACT_CHUNK_BYTES",
-        str(1024 * 1024),
+        str(512 * 1024),
+    )
+    monkeypatch.setenv(
+        "GRANULAR_MEAN_STERLING_ARTIFACT_CHUNK_ATTEMPTS",
+        "7",
     )
     monkeypatch.setenv(
         "GRANULAR_MEAN_STERLING_COMMAND_TIMEOUT_SECONDS",
@@ -186,7 +195,8 @@ def test_campaign_accepts_artifact_stream_overrides(
 
     runner = build_campaign(definition, contract)
 
-    assert runner.backend.profile.artifact_chunk_bytes == 1024 * 1024
+    assert runner.backend.profile.artifact_chunk_bytes == 512 * 1024
+    assert runner.backend.profile.artifact_chunk_attempts == 7
     assert runner.backend.profile.command_timeout_seconds == 900
 
 
