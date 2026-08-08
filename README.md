@@ -175,7 +175,11 @@ Sterling settings can be overridden with
 `GRANULAR_MEAN_STERLING_STORAGE_CLASS`,
 `GRANULAR_MEAN_STERLING_SERVICE_ACCOUNT`,
 `GRANULAR_MEAN_STERLING_IMAGE_PULL_SECRET`, and
-`GRANULAR_MEAN_STERLING_CODEX_SECRET`.
+`GRANULAR_MEAN_STERLING_CODEX_SECRET`. Artifact collection defaults to
+4 MiB resumable chunks with a 600-second timeout per `kubectl exec` call.
+Override those transfer settings with
+`GRANULAR_MEAN_STERLING_ARTIFACT_CHUNK_BYTES` and
+`GRANULAR_MEAN_STERLING_COMMAND_TIMEOUT_SECONDS`.
 
 Campaign construction fails fast when the unreviewed definition is selected,
 so newly added models or effort levels cannot silently skip qualitative

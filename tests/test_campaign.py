@@ -28,7 +28,9 @@ from granular_mean.campaign import (
     DEFAULT_AGENT_IMAGE,
     DEFAULT_AGENT_MEMORY_LIMIT,
     DEFAULT_AGENT_MEMORY_REQUEST,
+    DEFAULT_STERLING_ARTIFACT_CHUNK_BYTES,
     DEFAULT_STERLING_CODEX_SECRET,
+    DEFAULT_STERLING_COMMAND_TIMEOUT_SECONDS,
     DEFAULT_STERLING_NAMESPACE,
     NESTED_SANDBOX_BYPASS_ENVIRONMENT,
     build_campaign,
@@ -147,6 +149,14 @@ def test_campaign_uses_sterling_backend_and_configured_parallelism(
     assert runner.backend.profile.artifact_reader_image == "agent:test"
     assert runner.backend.profile.image_pull_secrets == ()
     assert runner.backend.profile.max_parallel == 2
+    assert (
+        runner.backend.profile.artifact_chunk_bytes
+        == DEFAULT_STERLING_ARTIFACT_CHUNK_BYTES
+    )
+    assert (
+        runner.backend.profile.command_timeout_seconds
+        == DEFAULT_STERLING_COMMAND_TIMEOUT_SECONDS
+    )
     assert runner.backend.profile.secret_environment == {
         "AZURE_OPENAI_API_KEY": (
             DEFAULT_STERLING_CODEX_SECRET,
@@ -156,6 +166,28 @@ def test_campaign_uses_sterling_backend_and_configured_parallelism(
     assert runner.backend.profile.nonsecret_environment == {
         NESTED_SANDBOX_BYPASS_ENVIRONMENT: "true",
     }
+
+
+def test_campaign_accepts_artifact_stream_overrides(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("GRANULAR_MEAN_CAMPAIGN_ROOT", str(tmp_path))
+    monkeypatch.setenv(
+        "GRANULAR_MEAN_STERLING_ARTIFACT_CHUNK_BYTES",
+        str(1024 * 1024),
+    )
+    monkeypatch.setenv(
+        "GRANULAR_MEAN_STERLING_COMMAND_TIMEOUT_SECONDS",
+        "900",
+    )
+    definition = build_reviewed_definition()
+    contract = load_output_contract(definition.contract_path)
+
+    runner = build_campaign(definition, contract)
+
+    assert runner.backend.profile.artifact_chunk_bytes == 1024 * 1024
+    assert runner.backend.profile.command_timeout_seconds == 900
 
 
 def test_campaign_workload_uses_containerized_azure_launcher(
