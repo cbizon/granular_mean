@@ -1,15 +1,10 @@
 from __future__ import annotations
 
-import argparse
-import json
 import os
-import signal
 import sys
-import threading
-from pathlib import Path
 
+from brunner.agent_cli import main as brunner_agent_main
 from brunner.providers import ProviderSettings
-from brunner.runner import run_staged_trial
 from brunner.trial import TrialIdentity, load_trial_identity
 
 
@@ -81,41 +76,17 @@ def provider_settings(identity: TrialIdentity) -> ProviderSettings:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(prog="granular-mean-agent")
-    parser.add_argument("trial", type=Path)
-    arguments = parser.parse_args()
-    trial = arguments.trial.resolve()
-    identity = load_trial_identity(trial)
-    stop_requested = threading.Event()
-
-    def request_stop(
-        _signum: int,
-        _frame: object,
-    ) -> None:
-        stop_requested.set()
-
-    previous_handlers = {
-        signum: signal.signal(signum, request_stop)
-        for signum in (signal.SIGTERM, signal.SIGINT)
-    }
-    try:
-        state = run_staged_trial(
-            trial,
-            provider_settings(identity),
-            executable=os.environ.get(
-                "GRANULAR_MEAN_CODEX_EXECUTABLE",
-                str(
-                    Path(sys.executable).with_name(
-                        "granular-mean-codex"
-                    )
+    if "--provider-executable" not in sys.argv:
+        sys.argv.extend(
+            (
+                "--provider-executable",
+                os.environ.get(
+                    "GRANULAR_MEAN_CODEX_EXECUTABLE",
+                    "granular-mean-codex",
                 ),
-            ),
-            stop_requested=stop_requested,
+            )
         )
-    finally:
-        for signum, handler in previous_handlers.items():
-            signal.signal(signum, handler)
-    print(json.dumps(state, indent=2))
+    brunner_agent_main()
     return 0
 
 

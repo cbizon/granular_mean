@@ -24,6 +24,16 @@ from granular_mean.agent import (
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_REVIEWER_MODEL = CODEX_MODEL
 DEFAULT_REVIEWER_EFFORT = "xhigh"
+DEFAULT_EVALUATOR_IMAGE = (
+    "ghcr.io/cbizon/granular-mean-evaluator@"
+    "sha256:6a2cdcb2a2e66ccbef8451f29dbdb246f3fa888052d24004f50b034457e19f05"
+)
+DEFAULT_EVALUATOR_CPU_REQUEST = "4"
+DEFAULT_EVALUATOR_CPU_LIMIT = "8"
+DEFAULT_EVALUATOR_MEMORY_REQUEST = "16Gi"
+DEFAULT_EVALUATOR_MEMORY_LIMIT = "32Gi"
+DEFAULT_EVALUATOR_EPHEMERAL_STORAGE_REQUEST = "1Gi"
+DEFAULT_EVALUATOR_EPHEMERAL_STORAGE_LIMIT = "4Gi"
 REVIEW_EVIDENCE = (
     "workspace/PROMPT.md",
     "workspace/cases.json",
@@ -40,14 +50,17 @@ REVIEW_EVIDENCE = (
 )
 
 
+def _required_environment(name: str, default: str) -> str:
+    value = os.environ.get(name, default).strip()
+    if not value:
+        raise RuntimeError(f"{name} must not be empty")
+    return value
+
+
 def build_definition() -> BenchmarkDefinition:
-    evaluator_image = os.environ.get(
-        "GRANULAR_MEAN_EVALUATOR_IMAGE"
-    )
-    evaluator_command = (
-        ("python", "-m", "granular_mean.evaluator")
-        if evaluator_image
-        else (sys.executable, "-m", "granular_mean.evaluator")
+    evaluator_image = _required_environment(
+        "GRANULAR_MEAN_EVALUATOR_IMAGE",
+        DEFAULT_EVALUATOR_IMAGE,
     )
     return BenchmarkDefinition(
         benchmark_id="granular-figure1",
@@ -64,15 +77,39 @@ def build_definition() -> BenchmarkDefinition:
             ),
         ),
         evaluation=EvaluationDefinition(
-            command=evaluator_command,
+            command=("python", "-m", "granular_mean.evaluator"),
             primary_report="evaluation/comparison.html",
             timeout_seconds=12 * 60 * 60,
             image=evaluator_image,
+            cpu_request=_required_environment(
+                "GRANULAR_MEAN_EVALUATOR_CPU_REQUEST",
+                DEFAULT_EVALUATOR_CPU_REQUEST,
+            ),
+            cpu_limit=_required_environment(
+                "GRANULAR_MEAN_EVALUATOR_CPU_LIMIT",
+                DEFAULT_EVALUATOR_CPU_LIMIT,
+            ),
+            memory_request=_required_environment(
+                "GRANULAR_MEAN_EVALUATOR_MEMORY_REQUEST",
+                DEFAULT_EVALUATOR_MEMORY_REQUEST,
+            ),
+            memory_limit=_required_environment(
+                "GRANULAR_MEAN_EVALUATOR_MEMORY_LIMIT",
+                DEFAULT_EVALUATOR_MEMORY_LIMIT,
+            ),
+            ephemeral_storage_request=_required_environment(
+                "GRANULAR_MEAN_EVALUATOR_EPHEMERAL_STORAGE_REQUEST",
+                DEFAULT_EVALUATOR_EPHEMERAL_STORAGE_REQUEST,
+            ),
+            ephemeral_storage_limit=_required_environment(
+                "GRANULAR_MEAN_EVALUATOR_EPHEMERAL_STORAGE_LIMIT",
+                DEFAULT_EVALUATOR_EPHEMERAL_STORAGE_LIMIT,
+            ),
         ),
         reference=ReferenceDefinition(
             root=ROOT / "reference",
             validate_command=(
-                sys.executable,
+                "python",
                 "-m",
                 "granular_mean.reference_validation",
             ),

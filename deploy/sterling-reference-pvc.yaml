@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: granular-mean-reference-v1
+  namespace: bizon
+  labels:
+    app.kubernetes.io/component: reference-storage
+    app.kubernetes.io/name: granular-mean-reference
+    app.kubernetes.io/part-of: granular-mean
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: basic

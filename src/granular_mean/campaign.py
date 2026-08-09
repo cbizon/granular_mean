@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-from dataclasses import replace
 from pathlib import Path
 
 from brunner import (
@@ -13,9 +12,7 @@ from brunner import (
 from brunner.backends import (
     KubernetesBackend,
     KubernetesProfile,
-    WorkloadSpec,
 )
-from brunner.campaign import default_workload_factory
 from brunner.contract import OutputContract
 
 from granular_mean.agent import (
@@ -23,7 +20,7 @@ from granular_mean.agent import (
     CODEX_MODEL,
     codex_environment_key,
 )
-from granular_mean.definition import ROOT
+from granular_mean.definition import DEFAULT_EVALUATOR_IMAGE, ROOT
 
 
 CAMPAIGN_VARIANT = "sol-5-6-all-efforts-v1"
@@ -31,10 +28,15 @@ CAMPAIGN_ID = f"granular-figure1-{CAMPAIGN_VARIANT}"
 DEFAULT_MAX_PARALLEL = 1
 DEFAULT_AGENT_IMAGE = (
     "ghcr.io/cbizon/granular-mean-agent@"
-    "sha256:3b70fca3845cc44f7fb7416b1eac5f082f1495e917985144bfbb26e752baad97"
+    "sha256:8b785dc13f0c52ad53ddd59088b210c64327dd1dfedd38df4b5d952f76c99868"
+)
+DEFAULT_STERLING_PROXY_IMAGE = (
+    "ubuntu/squid@"
+    "sha256:6a097f68bae708cedbabd6188d68c7e2e7a38cedd05a176e1cc0ba29e3bbe029"
 )
 DEFAULT_STERLING_NAMESPACE = "bizon"
 DEFAULT_STERLING_STORAGE_SIZE = "20Gi"
+DEFAULT_STERLING_REFERENCE_CLAIM = "granular-mean-reference-v1"
 DEFAULT_STERLING_CODEX_SECRET = "balls-bench-codex-azure"
 DEFAULT_AGENT_CPU_REQUEST = "2"
 DEFAULT_AGENT_CPU_LIMIT = "8"
@@ -80,31 +82,6 @@ def _resource_environment(name: str, default: str) -> str:
     return value
 
 
-def campaign_workload_factory(
-    trial: Path,
-    campaign_trial: CampaignTrial,
-    plan: CampaignPlan,
-    definition: BenchmarkDefinition,
-    backend_name: str,
-) -> WorkloadSpec:
-    workload = default_workload_factory(
-        trial,
-        campaign_trial,
-        plan,
-        definition,
-        backend_name,
-    )
-    return replace(
-        workload,
-        command=(
-            "python",
-            "-m",
-            "granular_mean.agent",
-            "/brunner/trial",
-        ),
-    )
-
-
 def _optional_environment(name: str) -> str | None:
     value = os.environ.get(name)
     return value.strip() if value and value.strip() else None
@@ -113,9 +90,9 @@ def _optional_environment(name: str) -> str | None:
 def _sterling_profile(
     *,
     agent_image: str | None,
+    artifact_reader_image: str,
     max_parallel: int,
 ) -> KubernetesProfile:
-    environment_key = codex_environment_key()
     pull_secret = _optional_environment(
         "GRANULAR_MEAN_STERLING_IMAGE_PULL_SECRET"
     )
@@ -125,7 +102,11 @@ def _sterling_profile(
             DEFAULT_STERLING_NAMESPACE,
         ),
         agent_image=agent_image,
-        artifact_reader_image=agent_image,
+        artifact_reader_image=artifact_reader_image,
+        reference_claim_name=os.environ.get(
+            "GRANULAR_MEAN_STERLING_REFERENCE_CLAIM",
+            DEFAULT_STERLING_REFERENCE_CLAIM,
+        ),
         storage_size=os.environ.get(
             "GRANULAR_MEAN_STERLING_STORAGE_SIZE",
             DEFAULT_STERLING_STORAGE_SIZE,
@@ -137,18 +118,13 @@ def _sterling_profile(
             "GRANULAR_MEAN_STERLING_SERVICE_ACCOUNT"
         ),
         image_pull_secrets=(pull_secret,) if pull_secret else (),
-        secret_environment={
-            environment_key: (
-                os.environ.get(
-                    "GRANULAR_MEAN_STERLING_CODEX_SECRET",
-                    DEFAULT_STERLING_CODEX_SECRET,
-                ),
-                environment_key,
-            )
-        },
         nonsecret_environment={
             NESTED_SANDBOX_BYPASS_ENVIRONMENT: "true",
         },
+        proxy_image=os.environ.get(
+            "GRANULAR_MEAN_STERLING_PROXY_IMAGE",
+            DEFAULT_STERLING_PROXY_IMAGE,
+        ),
         max_parallel=max_parallel,
         command_timeout_seconds=_positive_integer_environment(
             "GRANULAR_MEAN_STERLING_COMMAND_TIMEOUT_SECONDS",
@@ -184,6 +160,7 @@ def build_campaign(
         "GRANULAR_MEAN_MAX_PARALLEL",
         DEFAULT_MAX_PARALLEL,
     )
+    environment_key = codex_environment_key()
     plan = CampaignPlan(
         campaign_id=CAMPAIGN_ID,
         root=root,
@@ -192,6 +169,10 @@ def build_campaign(
         collection_retry_seconds=60,
         collection_max_attempts=5,
         max_pause_seconds=24 * 60 * 60,
+        provider_executable=os.environ.get(
+            "GRANULAR_MEAN_CODEX_EXECUTABLE",
+            "granular-mean-codex",
+        ),
         backend_image=(
             _optional_environment("GRANULAR_MEAN_AGENT_IMAGE")
             or DEFAULT_AGENT_IMAGE
@@ -220,9 +201,30 @@ def build_campaign(
             "GRANULAR_MEAN_AGENT_EPHEMERAL_STORAGE_LIMIT",
             DEFAULT_AGENT_EPHEMERAL_STORAGE_LIMIT,
         ),
+        provider_secret_environment={
+            "codex": {
+                environment_key: (
+                    os.environ.get(
+                        "GRANULAR_MEAN_STERLING_CODEX_SECRET",
+                        DEFAULT_STERLING_CODEX_SECRET,
+                    ),
+                    os.environ.get(
+                        "GRANULAR_MEAN_STERLING_CODEX_SECRET_KEY",
+                        environment_key,
+                    ),
+                )
+            }
+        },
     )
     profile = _sterling_profile(
         agent_image=plan.backend_image,
+        artifact_reader_image=(
+            _optional_environment(
+                "GRANULAR_MEAN_STERLING_ARTIFACT_READER_IMAGE"
+            )
+            or definition.evaluation.image
+            or DEFAULT_EVALUATOR_IMAGE
+        ),
         max_parallel=max_parallel,
     )
     return CampaignRunner(
@@ -230,5 +232,4 @@ def build_campaign(
         contract,
         plan,
         KubernetesBackend(profile),
-        workload_factory=campaign_workload_factory,
     )

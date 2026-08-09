@@ -1,0 +1,50 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: granular-mean-reference-upload
+  namespace: bizon
+  labels:
+    app.kubernetes.io/component: reference-upload
+    app.kubernetes.io/name: granular-mean-reference
+    app.kubernetes.io/part-of: granular-mean
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: upload
+      image: ghcr.io/cbizon/granular-mean-evaluator@sha256:6a2cdcb2a2e66ccbef8451f29dbdb246f3fa888052d24004f50b034457e19f05
+      command:
+        - /bin/sh
+        - -c
+        - sleep infinity
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: "1"
+          memory: 2Gi
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+        readOnlyRootFilesystem: true
+      volumeMounts:
+        - name: reference
+          mountPath: /reference
+        - name: tmp
+          mountPath: /tmp
+  volumes:
+    - name: reference
+      persistentVolumeClaim:
+        claimName: granular-mean-reference-v1
+    - name: tmp
+      emptyDir: {}

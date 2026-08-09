@@ -33,6 +33,8 @@ from granular_mean.campaign import (
     DEFAULT_STERLING_CODEX_SECRET,
     DEFAULT_STERLING_COMMAND_TIMEOUT_SECONDS,
     DEFAULT_STERLING_NAMESPACE,
+    DEFAULT_STERLING_PROXY_IMAGE,
+    DEFAULT_STERLING_REFERENCE_CLAIM,
     NESTED_SANDBOX_BYPASS_ENVIRONMENT,
     build_campaign,
     build_campaign_trials,
@@ -42,11 +44,35 @@ from granular_mean.codex_wrapper import (
     strict_output_schema,
 )
 from granular_mean.definition import (
+    DEFAULT_EVALUATOR_CPU_LIMIT,
+    DEFAULT_EVALUATOR_CPU_REQUEST,
+    DEFAULT_EVALUATOR_EPHEMERAL_STORAGE_LIMIT,
+    DEFAULT_EVALUATOR_EPHEMERAL_STORAGE_REQUEST,
+    DEFAULT_EVALUATOR_IMAGE,
+    DEFAULT_EVALUATOR_MEMORY_LIMIT,
+    DEFAULT_EVALUATOR_MEMORY_REQUEST,
     DEFAULT_REVIEWER_EFFORT,
     DEFAULT_REVIEWER_MODEL,
     build_definition,
     build_reviewed_definition,
 )
+
+
+AZURE_CODEX_ARGUMENTS = [
+    "-c",
+    'model_provider="azure"',
+    "-c",
+    'model_providers.azure.name="Azure OpenAI"',
+    "-c",
+    (
+        "model_providers.azure.base_url="
+        '"https://renci-analytics.openai.azure.com/openai/v1/"'
+    ),
+    "-c",
+    'model_providers.azure.env_key="AZURE_OPENAI_API_KEY"',
+    "-c",
+    "model_providers.azure.supports_websockets=false",
+]
 
 
 def test_campaign_runs_sol_at_every_supported_effort() -> None:
@@ -58,63 +84,26 @@ def test_campaign_runs_sol_at_every_supported_effort() -> None:
     assert len({trial.test_id for trial in trials}) == len(CODEX_EFFORTS)
 
 
-def test_remote_agent_forwards_shutdown_to_runner(
+def test_remote_agent_delegates_to_brunner_protocol(
     monkeypatch,
     tmp_path,
-    capsys,
 ) -> None:
-    identity = TrialIdentity(
-        test_id="sol-low",
-        provider="codex",
-        model=CODEX_MODEL,
-        effort="low",
-    )
-    registered_handlers: dict[int, object] = {}
-    previous_handlers = {
-        agent_module.signal.SIGTERM: object(),
-        agent_module.signal.SIGINT: object(),
-    }
+    called = False
 
-    def fake_signal(signum: int, handler: object) -> object:
-        if callable(handler):
-            registered_handlers[signum] = handler
-        return previous_handlers[signum]
+    def fake_brunner_agent_main() -> None:
+        nonlocal called
+        called = True
+        assert sys.argv == [
+            "granular-mean-agent",
+            str(tmp_path),
+            "--provider-executable",
+            "granular-mean-codex",
+        ]
 
-    def fake_run_staged_trial(
-        trial: Path,
-        settings: object,
-        *,
-        executable: str,
-        stop_requested: object,
-    ) -> dict[str, str]:
-        assert trial == tmp_path.resolve()
-        assert settings == "provider-settings"
-        assert executable.endswith("granular-mean-codex")
-        handler = registered_handlers[agent_module.signal.SIGTERM]
-        assert callable(handler)
-        handler(agent_module.signal.SIGTERM, None)
-        assert stop_requested.is_set()
-        return {"status": "interrupted"}
-
-    monkeypatch.setattr(agent_module.signal, "signal", fake_signal)
     monkeypatch.setattr(
         agent_module,
-        "load_trial_identity",
-        lambda trial: identity,
-    )
-    monkeypatch.setattr(
-        agent_module,
-        "provider_settings",
-        lambda loaded: (
-            "provider-settings"
-            if loaded == identity
-            else pytest.fail("unexpected identity")
-        ),
-    )
-    monkeypatch.setattr(
-        agent_module,
-        "run_staged_trial",
-        fake_run_staged_trial,
+        "brunner_agent_main",
+        fake_brunner_agent_main,
     )
     monkeypatch.setattr(
         sys,
@@ -123,9 +112,7 @@ def test_remote_agent_forwards_shutdown_to_runner(
     )
 
     assert agent_module.main() == 0
-    assert json.loads(capsys.readouterr().out) == {
-        "status": "interrupted"
-    }
+    assert called is True
 
 
 def test_campaign_uses_sterling_backend_and_configured_parallelism(
@@ -144,10 +131,22 @@ def test_campaign_uses_sterling_backend_and_configured_parallelism(
     assert runner.plan.root == tmp_path.resolve()
     assert runner.plan.max_parallel == 2
     assert runner.plan.backend_image == "agent:test"
+    assert runner.plan.provider_executable == "granular-mean-codex"
     assert isinstance(runner.backend, KubernetesBackend)
     assert runner.backend.profile.namespace == DEFAULT_STERLING_NAMESPACE
     assert runner.backend.profile.agent_image == "agent:test"
-    assert runner.backend.profile.artifact_reader_image == "agent:test"
+    assert (
+        runner.backend.profile.artifact_reader_image
+        == DEFAULT_EVALUATOR_IMAGE
+    )
+    assert (
+        runner.backend.profile.reference_claim_name
+        == DEFAULT_STERLING_REFERENCE_CLAIM
+    )
+    assert (
+        runner.backend.profile.proxy_image
+        == DEFAULT_STERLING_PROXY_IMAGE
+    )
     assert runner.backend.profile.image_pull_secrets == ()
     assert runner.backend.profile.max_parallel == 2
     assert (
@@ -162,11 +161,14 @@ def test_campaign_uses_sterling_backend_and_configured_parallelism(
         runner.backend.profile.command_timeout_seconds
         == DEFAULT_STERLING_COMMAND_TIMEOUT_SECONDS
     )
-    assert runner.backend.profile.secret_environment == {
-        "AZURE_OPENAI_API_KEY": (
-            DEFAULT_STERLING_CODEX_SECRET,
-            "AZURE_OPENAI_API_KEY",
-        )
+    assert runner.backend.profile.secret_environment == {}
+    assert runner.plan.provider_secret_environment == {
+        "codex": {
+            "AZURE_OPENAI_API_KEY": (
+                DEFAULT_STERLING_CODEX_SECRET,
+                "AZURE_OPENAI_API_KEY",
+            )
+        }
     }
     assert runner.backend.profile.nonsecret_environment == {
         NESTED_SANDBOX_BYPASS_ENVIRONMENT: "true",
@@ -223,10 +225,25 @@ def test_campaign_workload_uses_containerized_azure_launcher(
     assert workload.command == (
         "python",
         "-m",
-        "granular_mean.agent",
+        "brunner.agent_cli",
         "/brunner/trial",
+        "--provider-executable",
+        "granular-mean-codex",
     )
     assert workload.image == "agent:test"
+    assert workload.secret_environment == {
+        "AZURE_OPENAI_API_KEY": (
+            DEFAULT_STERLING_CODEX_SECRET,
+            "AZURE_OPENAI_API_KEY",
+        )
+    }
+    assert workload.evaluation is not None
+    assert workload.evaluation.image == DEFAULT_EVALUATOR_IMAGE
+    assert workload.evaluation.command == (
+        "python",
+        "-m",
+        "granular_mean.evaluator",
+    )
     assert workload.cpu_request == DEFAULT_AGENT_CPU_REQUEST
     assert workload.cpu_limit == DEFAULT_AGENT_CPU_LIMIT
     assert workload.memory_request == DEFAULT_AGENT_MEMORY_REQUEST
@@ -245,9 +262,14 @@ def test_campaign_workload_uses_containerized_azure_launcher(
         workload,
         runner.backend.profile,
         {},
+        proxy_url="http://10.96.4.12:3128",
     )
-    resources = job["spec"]["template"]["spec"]["containers"][0]["resources"]
-    assert resources == {
+    pod = job["spec"]["template"]["spec"]
+    agent = pod["initContainers"][0]
+    evaluator = pod["containers"][0]
+    assert agent["name"] == "agent"
+    assert evaluator["name"] == "evaluator"
+    assert agent["resources"] == {
         "requests": {
             "cpu": DEFAULT_AGENT_CPU_REQUEST,
             "memory": DEFAULT_AGENT_MEMORY_REQUEST,
@@ -259,6 +281,38 @@ def test_campaign_workload_uses_containerized_azure_launcher(
             "ephemeral-storage": DEFAULT_AGENT_EPHEMERAL_STORAGE_LIMIT,
         },
     }
+    assert evaluator["resources"] == {
+        "requests": {
+            "cpu": DEFAULT_EVALUATOR_CPU_REQUEST,
+            "memory": DEFAULT_EVALUATOR_MEMORY_REQUEST,
+            "ephemeral-storage": (
+                DEFAULT_EVALUATOR_EPHEMERAL_STORAGE_REQUEST
+            ),
+        },
+        "limits": {
+            "cpu": DEFAULT_EVALUATOR_CPU_LIMIT,
+            "memory": DEFAULT_EVALUATOR_MEMORY_LIMIT,
+            "ephemeral-storage": (
+                DEFAULT_EVALUATOR_EPHEMERAL_STORAGE_LIMIT
+            ),
+        },
+    }
+    agent_environment = {item["name"] for item in agent["env"]}
+    evaluator_environment = {item["name"] for item in evaluator["env"]}
+    assert "AZURE_OPENAI_API_KEY" in agent_environment
+    assert "HTTPS_PROXY" in agent_environment
+    assert "AZURE_OPENAI_API_KEY" not in evaluator_environment
+    assert "HTTPS_PROXY" not in evaluator_environment
+    assert all(
+        mount["name"] != "reference"
+        for mount in agent["volumeMounts"]
+    )
+    reference_mount = next(
+        mount
+        for mount in evaluator["volumeMounts"]
+        if mount["name"] == "reference"
+    )
+    assert reference_mount["readOnly"] is True
 
 
 def test_campaign_workload_accepts_resource_overrides(
@@ -313,19 +367,57 @@ def test_campaign_defaults_to_pinned_agent_image(
 
     assert runner.plan.backend_image == DEFAULT_AGENT_IMAGE
     assert runner.backend.profile.agent_image == DEFAULT_AGENT_IMAGE
-
-
-def test_agent_image_pins_current_brunner_build() -> None:
-    root = Path(__file__).parents[1]
-    dockerfile = (root / "containers" / "agent.Dockerfile").read_text()
-
     assert (
-        "ARG BRUNNER_REF=db9afcb1b18dd9283250bbea87730ce8dd4db56e"
-        in dockerfile
+        runner.backend.profile.artifact_reader_image
+        == DEFAULT_EVALUATOR_IMAGE
     )
+
+
+def test_images_pin_current_brunner_build() -> None:
+    root = Path(__file__).parents[1]
+    agent = (root / "containers" / "agent.Dockerfile").read_text()
+    evaluator = (
+        root / "containers" / "evaluator.Dockerfile"
+    ).read_text()
+
+    brunner_revision = (
+        "f3e01c1913a49e7440fa455566200c97751b9655"
+    )
+    assert f"ARG BRUNNER_REVISION={brunner_revision}" in agent
+    assert f"ARG BRUNNER_REVISION={brunner_revision}" in evaluator
+    assert "COPY --from=brunner" in agent
+    assert "COPY --from=brunner" in evaluator
     assert DEFAULT_AGENT_IMAGE == (
         "ghcr.io/cbizon/granular-mean-agent@"
-        "sha256:3b70fca3845cc44f7fb7416b1eac5f082f1495e917985144bfbb26e752baad97"
+        "sha256:8b785dc13f0c52ad53ddd59088b210c64327dd1dfedd38df4b5d952f76c99868"
+    )
+    assert DEFAULT_EVALUATOR_IMAGE == (
+        "ghcr.io/cbizon/granular-mean-evaluator@"
+        "sha256:6a2cdcb2a2e66ccbef8451f29dbdb246f3fa888052d24004f50b034457e19f05"
+    )
+
+
+def test_definition_requires_image_backed_sterling_evaluation() -> None:
+    definition = build_definition()
+
+    assert definition.evaluation.image == DEFAULT_EVALUATOR_IMAGE
+    assert definition.evaluation.command == (
+        "python",
+        "-m",
+        "granular_mean.evaluator",
+    )
+    assert definition.evaluation.cpu_request == DEFAULT_EVALUATOR_CPU_REQUEST
+    assert definition.evaluation.cpu_limit == DEFAULT_EVALUATOR_CPU_LIMIT
+    assert (
+        definition.evaluation.memory_request
+        == DEFAULT_EVALUATOR_MEMORY_REQUEST
+    )
+    assert definition.evaluation.memory_limit == DEFAULT_EVALUATOR_MEMORY_LIMIT
+    assert definition.reference is not None
+    assert definition.reference.validate_command == (
+        "python",
+        "-m",
+        "granular_mean.reference_validation",
     )
 
 
@@ -368,6 +460,7 @@ def test_codex_wrapper_bypasses_initial_nested_sandbox(
         "exec",
         "--dangerously-bypass-approvals-and-sandbox",
         "--json",
+        *AZURE_CODEX_ARGUMENTS,
         "--model",
         CODEX_MODEL,
     ]
@@ -397,6 +490,7 @@ def test_codex_wrapper_bypasses_resumed_nested_sandbox(
         "resume",
         "--json",
         "--last",
+        *AZURE_CODEX_ARGUMENTS,
         "-",
     ]
 
@@ -425,6 +519,7 @@ def test_codex_wrapper_keeps_local_review_sandbox(
         "--json",
         "--sandbox",
         "read-only",
+        *AZURE_CODEX_ARGUMENTS,
         "--model",
         CODEX_MODEL,
     ]
