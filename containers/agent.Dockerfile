@@ -1,12 +1,16 @@
+# syntax=docker/dockerfile:1.7
+
+ARG BRUNNER_REVISION=f3e01c1913a49e7440fa455566200c97751b9655
+
 FROM python:3.12-bookworm AS python-builder
 
-ARG BRUNNER_REF=db9afcb1b18dd9283250bbea87730ce8dd4db56e
+RUN python -m venv /opt/venv
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends git \
-    && python -m venv /opt/venv \
-    && /opt/venv/bin/pip install --no-cache-dir \
-       "git+https://github.com/cbizon/brunner.git@${BRUNNER_REF}" \
+COPY --from=brunner pyproject.toml README.md /build/brunner/
+COPY --from=brunner src/ /build/brunner/src/
+
+RUN /opt/venv/bin/pip install --no-cache-dir \
+       /build/brunner \
        "matplotlib==3.11.0" \
        "numba==0.66.0" \
        "numpy==2.2.6" \
@@ -33,6 +37,8 @@ RUN npm install -g "@openai/codex@${CODEX_VERSION}"
 FROM python:3.12-slim-bookworm
 
 LABEL org.opencontainers.image.source="https://github.com/cbizon/granular_mean"
+ARG BRUNNER_REVISION
+LABEL org.opencontainers.image.brunner-revision="${BRUNNER_REVISION}"
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \

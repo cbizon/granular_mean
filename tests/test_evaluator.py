@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import json
 import shutil
+import sys
 from dataclasses import replace
 
 from brunner.contract import load_output_contract
-from brunner.evaluation import evaluate_trial
+from brunner.evaluation import evaluation_spec, execute_evaluation
 from brunner.reference import build_reference_manifest
 from brunner.trial import TrialIdentity, create_trial
 
@@ -80,7 +81,25 @@ def test_brunner_evaluates_identical_synthetic_collections(
     )
     monkeypatch.setenv("GRANULAR_MEAN_INCLUDE_OVERLAPS", "false")
 
-    result = evaluate_trial(definition, contract, trial)
+    spec = evaluation_spec(definition, contract)
+    spec = replace(
+        spec,
+        command=(
+            sys.executable,
+            "-m",
+            "granular_mean.evaluator",
+        ),
+        reference_validate_command=(
+            sys.executable,
+            "-m",
+            "granular_mean.reference_validation",
+        ),
+    )
+    result = execute_evaluation(
+        spec,
+        trial,
+        reference_root=reference_root,
+    )
 
     assert result["status"] == "complete"
     assert result["summary"]["contract_complete"] is True

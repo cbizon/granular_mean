@@ -6,6 +6,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from granular_mean.agent import CODEX_MODEL, azure_codex_settings
+
 
 TRUE_VALUES = {"1", "true", "yes"}
 NESTED_SANDBOX_BYPASS_ENVIRONMENT = (
@@ -118,6 +120,47 @@ def _bypass_nested_sandbox(arguments: list[str]) -> list[str]:
     return prepared
 
 
+def _configure_azure_provider(arguments: list[str]) -> list[str]:
+    configured = {
+        value.split("=", 1)[0]
+        for index, value in enumerate(arguments)
+        if index > 0 and arguments[index - 1] == "-c" and "=" in value
+    }
+    settings = azure_codex_settings(CODEX_MODEL, None)
+    provider_id = settings.provider_id
+    if provider_id is None:
+        return arguments
+    provider_key = f"model_providers.{provider_id}"
+    values = (
+        ("model_provider", provider_id),
+        (f"{provider_key}.name", settings.provider_name),
+        (f"{provider_key}.base_url", settings.base_url),
+        (f"{provider_key}.env_key", settings.environment_key),
+        (f"{provider_key}.supports_websockets", False),
+    )
+    additions = [
+        argument
+        for key, value in values
+        if key not in configured
+        for argument in ("-c", f"{key}={json.dumps(value)}")
+    ]
+    if not additions:
+        return arguments
+    try:
+        insertion_index = arguments.index("--model")
+    except ValueError:
+        insertion_index = (
+            len(arguments) - 1
+            if arguments and arguments[-1] == "-"
+            else len(arguments)
+        )
+    return (
+        arguments[:insertion_index]
+        + additions
+        + arguments[insertion_index:]
+    )
+
+
 def prepare_arguments(arguments: list[str]) -> list[str]:
     prepared = list(arguments)
     if os.environ.get(
@@ -125,7 +168,8 @@ def prepare_arguments(arguments: list[str]) -> list[str]:
         "false",
     ).lower() in TRUE_VALUES:
         prepared = _bypass_nested_sandbox(prepared)
-    return _prepare_output_schema(prepared)
+    prepared = _prepare_output_schema(prepared)
+    return _configure_azure_provider(prepared)
 
 
 def main() -> None:
