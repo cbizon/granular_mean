@@ -17,6 +17,8 @@ spec:
     fsGroup: 1000
     seccompProfile:
       type: RuntimeDefault
+  imagePullSecrets:
+    - name: balls-bench-ghcr
   containers:
     - name: upload
       image: ghcr.io/cbizon/granular-mean-evaluator@sha256:77c4742436b703526c779565f8dc749156cc48cf661363241e93d24f8fad1b2d

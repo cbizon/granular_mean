@@ -220,8 +220,9 @@ Other Sterling settings can be overridden with
 `GRANULAR_MEAN_STERLING_SERVICE_ACCOUNT`,
 `GRANULAR_MEAN_STERLING_IMAGE_PULL_SECRET`, and
 `GRANULAR_MEAN_STERLING_CODEX_SECRET`. The default reference claim is
-`granular-mean-reference-v1`, and the managed proxy is an immutable official
-Ubuntu Squid image. Override those deployment inputs with
+`granular-mean-reference-v1`, the default GHCR pull credential is
+`balls-bench-ghcr`, and the managed proxy is an immutable official Ubuntu Squid
+image. Override those deployment inputs with
 `GRANULAR_MEAN_STERLING_REFERENCE_CLAIM`,
 `GRANULAR_MEAN_STERLING_PROXY_IMAGE`, or
 `GRANULAR_MEAN_STERLING_ARTIFACT_READER_IMAGE`.

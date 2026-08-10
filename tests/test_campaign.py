@@ -32,6 +32,7 @@ from granular_mean.campaign import (
     DEFAULT_STERLING_ARTIFACT_CHUNK_BYTES,
     DEFAULT_STERLING_CODEX_SECRET,
     DEFAULT_STERLING_COMMAND_TIMEOUT_SECONDS,
+    DEFAULT_STERLING_IMAGE_PULL_SECRET,
     DEFAULT_STERLING_NAMESPACE,
     DEFAULT_STERLING_NETWORK_ISOLATION_MODE,
     DEFAULT_STERLING_PROXY_IMAGE,
@@ -172,7 +173,9 @@ def test_campaign_uses_sterling_backend_and_configured_parallelism(
         runner.backend.profile.proxy_image
         == DEFAULT_STERLING_PROXY_IMAGE
     )
-    assert runner.backend.profile.image_pull_secrets == ()
+    assert runner.backend.profile.image_pull_secrets == (
+        DEFAULT_STERLING_IMAGE_PULL_SECRET,
+    )
     assert runner.backend.profile.max_parallel == 2
     assert (
         runner.backend.profile.artifact_chunk_bytes
@@ -360,6 +363,10 @@ def test_campaign_workload_accepts_resource_overrides(
         "GRANULAR_MEAN_AGENT_EPHEMERAL_STORAGE_LIMIT",
         "2Gi",
     )
+    monkeypatch.setenv(
+        "GRANULAR_MEAN_STERLING_IMAGE_PULL_SECRET",
+        "custom-pull-secret",
+    )
     definition = build_reviewed_definition()
     contract = load_output_contract(definition.contract_path)
     runner = build_campaign(definition, contract)
@@ -380,6 +387,9 @@ def test_campaign_workload_accepts_resource_overrides(
     assert workload.memory_limit == "24Gi"
     assert workload.ephemeral_storage_request == "750Mi"
     assert workload.ephemeral_storage_limit == "2Gi"
+    assert runner.backend.profile.image_pull_secrets == (
+        "custom-pull-secret",
+    )
 
 
 def test_campaign_rejects_retired_published_images(
@@ -504,6 +514,7 @@ def test_reference_upload_is_network_isolated() -> None:
     assert "automountServiceAccountToken: false" in upload
     assert "enableServiceLinks: false" in upload
     assert f"image: {DEFAULT_EVALUATOR_IMAGE}" in upload
+    assert "imagePullSecrets:\n    - name: balls-bench-ghcr" in upload
     assert "namespace:" not in pvc
     assert "namespace:" not in policy
     assert "namespace:" not in upload
