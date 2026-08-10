@@ -91,7 +91,6 @@ def _prepare_output_schema(arguments: list[str]) -> list[str]:
 
 def _bypass_nested_sandbox(arguments: list[str]) -> list[str]:
     prepared: list[str] = []
-    sandbox_found = False
     index = 0
     while index < len(arguments):
         argument = arguments[index]
@@ -101,21 +100,17 @@ def _bypass_nested_sandbox(arguments: list[str]) -> list[str]:
             continue
         if index + 1 >= len(arguments):
             raise RuntimeError("Codex --sandbox argument has no value")
-        sandbox_found = True
         index += 2
 
     if "exec" not in prepared:
         return prepared
     exec_index = prepared.index("exec")
-    is_resume = (
-        exec_index + 1 < len(prepared)
-        and prepared[exec_index + 1] == "resume"
-    )
-    if not sandbox_found and not is_resume:
-        raise RuntimeError("Codex command does not include --sandbox")
+    bypass_flag = "--dangerously-bypass-approvals-and-sandbox"
+    if bypass_flag in prepared:
+        return prepared
     prepared.insert(
         exec_index + 1,
-        "--dangerously-bypass-approvals-and-sandbox",
+        bypass_flag,
     )
     return prepared
 

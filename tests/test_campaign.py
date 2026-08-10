@@ -647,7 +647,7 @@ def test_codex_wrapper_keeps_local_review_sandbox(
     ]
 
 
-def test_codex_wrapper_requires_initial_sandbox_when_bypassing(
+def test_codex_wrapper_bypasses_initial_command_without_sandbox(
     monkeypatch,
 ) -> None:
     monkeypatch.setenv(
@@ -655,11 +655,42 @@ def test_codex_wrapper_requires_initial_sandbox_when_bypassing(
         "true",
     )
 
-    with pytest.raises(
-        RuntimeError,
-        match="does not include --sandbox",
-    ):
-        prepare_arguments(["exec", "--json"])
+    arguments = prepare_arguments(["exec", "--json"])
+
+    assert arguments == [
+        "exec",
+        "--dangerously-bypass-approvals-and-sandbox",
+        "--json",
+        *AZURE_CODEX_ARGUMENTS,
+    ]
+
+
+def test_codex_wrapper_accepts_brunner_bypass_flag(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv(
+        NESTED_SANDBOX_BYPASS_ENVIRONMENT,
+        "true",
+    )
+
+    arguments = prepare_arguments(
+        [
+            "exec",
+            "--json",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--model",
+            CODEX_MODEL,
+        ]
+    )
+
+    assert arguments == [
+        "exec",
+        "--json",
+        "--dangerously-bypass-approvals-and-sandbox",
+        *AZURE_CODEX_ARGUMENTS,
+        "--model",
+        CODEX_MODEL,
+    ]
 
 
 def test_reviewed_definition_defaults_to_azure_sol_xhigh() -> None:
