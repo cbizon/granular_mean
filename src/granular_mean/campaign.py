@@ -20,21 +20,30 @@ from granular_mean.agent import (
     CODEX_MODEL,
     codex_environment_key,
 )
-from granular_mean.definition import DEFAULT_EVALUATOR_IMAGE, ROOT
+from granular_mean.definition import (
+    DEFAULT_EVALUATOR_IMAGE,
+    RETIRED_EVALUATOR_IMAGE,
+    ROOT,
+)
 
 
-CAMPAIGN_VARIANT = "sol-5-6-all-efforts-v1"
+CAMPAIGN_VARIANT = "sol-5-6-all-efforts-v2"
 CAMPAIGN_ID = f"granular-figure1-{CAMPAIGN_VARIANT}"
 DEFAULT_MAX_PARALLEL = 1
-DEFAULT_AGENT_IMAGE = (
+RETIRED_AGENT_IMAGE = (
     "ghcr.io/cbizon/granular-mean-agent@"
     "sha256:8b785dc13f0c52ad53ddd59088b210c64327dd1dfedd38df4b5d952f76c99868"
+)
+DEFAULT_AGENT_IMAGE = (
+    "ghcr.io/cbizon/granular-mean-agent@"
+    "sha256:487049af74c582eaf3af204af8d86a05fd57918ee6edfdae2409742c9699975d"
 )
 DEFAULT_STERLING_PROXY_IMAGE = (
     "ubuntu/squid@"
     "sha256:6a097f68bae708cedbabd6188d68c7e2e7a38cedd05a176e1cc0ba29e3bbe029"
 )
 DEFAULT_STERLING_NAMESPACE = "bizon"
+DEFAULT_STERLING_NETWORK_ISOLATION_MODE = "controlled-egress"
 DEFAULT_STERLING_STORAGE_SIZE = "20Gi"
 DEFAULT_STERLING_REFERENCE_CLAIM = "granular-mean-reference-v1"
 DEFAULT_STERLING_CODEX_SECRET = "balls-bench-codex-azure"
@@ -97,9 +106,13 @@ def _sterling_profile(
         "GRANULAR_MEAN_STERLING_IMAGE_PULL_SECRET"
     )
     return KubernetesProfile(
-        namespace=os.environ.get(
+        namespace=_resource_environment(
             "GRANULAR_MEAN_STERLING_NAMESPACE",
             DEFAULT_STERLING_NAMESPACE,
+        ),
+        network_isolation_mode=_resource_environment(
+            "GRANULAR_MEAN_STERLING_NETWORK_ISOLATION_MODE",
+            DEFAULT_STERLING_NETWORK_ISOLATION_MODE,
         ),
         agent_image=agent_image,
         artifact_reader_image=artifact_reader_image,
@@ -160,6 +173,20 @@ def build_campaign(
         "GRANULAR_MEAN_MAX_PARALLEL",
         DEFAULT_MAX_PARALLEL,
     )
+    agent_image = (
+        _optional_environment("GRANULAR_MEAN_AGENT_IMAGE")
+        or DEFAULT_AGENT_IMAGE
+    )
+    evaluator_image = definition.evaluation.image
+    if (
+        agent_image == RETIRED_AGENT_IMAGE
+        or evaluator_image == RETIRED_EVALUATOR_IMAGE
+    ):
+        raise RuntimeError(
+            "campaign images predate the restored benchmark isolation "
+            "invariants; rebuild both images and configure their immutable "
+            "digests before launching"
+        )
     environment_key = codex_environment_key()
     plan = CampaignPlan(
         campaign_id=CAMPAIGN_ID,
@@ -173,10 +200,7 @@ def build_campaign(
             "GRANULAR_MEAN_CODEX_EXECUTABLE",
             "granular-mean-codex",
         ),
-        backend_image=(
-            _optional_environment("GRANULAR_MEAN_AGENT_IMAGE")
-            or DEFAULT_AGENT_IMAGE
-        ),
+        backend_image=agent_image,
         cpu_request=_resource_environment(
             "GRANULAR_MEAN_AGENT_CPU_REQUEST",
             DEFAULT_AGENT_CPU_REQUEST,

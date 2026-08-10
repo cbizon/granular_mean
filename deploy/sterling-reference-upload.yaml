@@ -2,7 +2,6 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: granular-mean-reference-upload
-  namespace: bizon
   labels:
     app.kubernetes.io/component: reference-upload
     app.kubernetes.io/name: granular-mean-reference
@@ -10,6 +9,7 @@ metadata:
 spec:
   restartPolicy: Never
   automountServiceAccountToken: false
+  enableServiceLinks: false
   securityContext:
     runAsNonRoot: true
     runAsUser: 1000
@@ -19,7 +19,7 @@ spec:
       type: RuntimeDefault
   containers:
     - name: upload
-      image: ghcr.io/cbizon/granular-mean-evaluator@sha256:6a2cdcb2a2e66ccbef8451f29dbdb246f3fa888052d24004f50b034457e19f05
+      image: ghcr.io/cbizon/granular-mean-evaluator@sha256:77c4742436b703526c779565f8dc749156cc48cf661363241e93d24f8fad1b2d
       command:
         - /bin/sh
         - -c

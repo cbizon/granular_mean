@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-ARG BRUNNER_REVISION=f3e01c1913a49e7440fa455566200c97751b9655
+ARG BRUNNER_REVISION
 
 FROM python:3.12-bookworm AS python-builder
 
@@ -9,7 +9,8 @@ RUN python -m venv /opt/venv
 COPY --from=brunner pyproject.toml README.md /build/brunner/
 COPY --from=brunner src/ /build/brunner/src/
 
-RUN /opt/venv/bin/pip install --no-cache-dir \
+RUN --mount=type=cache,target=/root/.cache/pip \
+    /opt/venv/bin/pip install --timeout 600 --retries 10 \
        /build/brunner \
        "matplotlib==3.11.0" \
        "numba==0.66.0" \
@@ -22,9 +23,13 @@ RUN /opt/venv/bin/pip install --no-cache-dir \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build/granular-mean
-COPY pyproject.toml README.md ./
-COPY src/ src/
-RUN /opt/venv/bin/pip install --no-cache-dir --no-deps .
+COPY containers/agent-pyproject.toml pyproject.toml
+COPY src/granular_mean/__init__.py src/granular_mean/
+COPY src/granular_mean/agent.py src/granular_mean/
+COPY src/granular_mean/codex_wrapper.py src/granular_mean/
+RUN --mount=type=cache,target=/root/.cache/pip \
+    /opt/venv/bin/pip install \
+      --no-deps --timeout 600 --retries 10 .
 
 
 FROM node:22-bookworm-slim AS node-builder
@@ -40,7 +45,11 @@ LABEL org.opencontainers.image.source="https://github.com/cbizon/granular_mean"
 ARG BRUNNER_REVISION
 LABEL org.opencontainers.image.brunner-revision="${BRUNNER_REVISION}"
 
-RUN apt-get update \
+RUN test -n "${BRUNNER_REVISION}"
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update \
     && apt-get install -y --no-install-recommends \
        bubblewrap \
        build-essential \
@@ -48,9 +57,7 @@ RUN apt-get update \
        poppler-utils \
        socat \
        util-linux \
-    && useradd --create-home --uid 1000 benchmark \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    && useradd --create-home --uid 1000 benchmark
 
 COPY --from=python-builder /opt/venv /opt/venv
 COPY --from=node-builder /usr/local/bin/node /usr/local/bin/node
@@ -61,6 +68,8 @@ ENV PATH=/opt/venv/bin:$PATH \
     MPLCONFIGDIR=/tmp/matplotlib \
     NUMBA_CACHE_DIR=/tmp/numba \
     PIP_NO_INDEX=1 \
+    PYTHONNOUSERSITE=1 \
+    PYTHONSAFEPATH=1 \
     PYTHONUNBUFFERED=1 \
     UV_NO_SYNC=1 \
     XDG_CACHE_HOME=/tmp/cache

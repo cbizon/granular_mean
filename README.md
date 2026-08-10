@@ -95,7 +95,8 @@ intentionally excludes the multi-gigabyte trajectory artifacts.
 ## Campaign
 
 The campaign runs only `gpt-5.6-sol`, once at each effort supported by the
-current configured model catalog: `low`, `medium`, `high`, and `xhigh`.
+current configured model catalog: `low`, `medium`, `high`, `xhigh`, `max`,
+and `ultra`.
 Trial IDs are stable, so rerunning the same command resumes the existing
 campaign state.
 
@@ -105,52 +106,86 @@ container and the trusted deterministic evaluator as the main container.
 Only the agent receives the RENCI Azure credential and Brunner's managed
 provider proxy. Only the evaluator mounts the validated reference PVC.
 
-Build and publish both Linux/AMD64 images from the sibling Brunner checkout:
+Build and publish both Linux/AMD64 images from the sibling Brunner checkout.
+The agent image intentionally installs only the agent launcher and provider
+wrapper from this repository; trusted evaluator, scoring, report, and reference
+code must not be present in it.
 
 ```bash
 docker buildx build \
   --build-context brunner=../brunner \
+  --build-arg BRUNNER_REVISION="$(git -C ../brunner rev-parse HEAD)" \
   --platform linux/amd64 \
   -f containers/agent.Dockerfile \
-  -t ghcr.io/cbizon/granular-mean-agent:brunner-f3e01c1 \
+  -t ghcr.io/cbizon/granular-mean-agent:brunner-0252441 \
   --push \
   .
 
 docker buildx build \
   --build-context brunner=../brunner \
+  --build-arg BRUNNER_REVISION="$(git -C ../brunner rev-parse HEAD)" \
   --platform linux/amd64 \
   -f containers/evaluator.Dockerfile \
-  -t ghcr.io/cbizon/granular-mean-evaluator:brunner-f3e01c1 \
+  -t ghcr.io/cbizon/granular-mean-evaluator:brunner-0252441 \
   --push \
   .
 ```
 
-Both images embed Brunner revision `f3e01c1`. The agent also contains Codex CLI
-`0.144.1` and candidate scientific tooling. The smaller evaluator contains
-only Brunner, the benchmark package, and deterministic scoring dependencies;
-it contains no provider CLI or credentials.
+Commit and clean the Brunner worktree before building. Both Dockerfiles require
+an explicit Brunner revision and embed it in the resulting image.
+The agent also contains Codex CLI `0.144.1` and candidate scientific tooling.
+The smaller evaluator contains only Brunner, the benchmark package, and
+deterministic scoring dependencies; it contains no provider CLI or
+credentials.
 
-Published immutable images:
+Published immutable Linux/AMD64 images:
 
-- Agent: `ghcr.io/cbizon/granular-mean-agent@sha256:8b785dc13f0c52ad53ddd59088b210c64327dd1dfedd38df4b5d952f76c99868`
-- Evaluator: `ghcr.io/cbizon/granular-mean-evaluator@sha256:6a2cdcb2a2e66ccbef8451f29dbdb246f3fa888052d24004f50b034457e19f05`
+- Agent: `ghcr.io/cbizon/granular-mean-agent@sha256:487049af74c582eaf3af204af8d86a05fd57918ee6edfdae2409742c9699975d`
+- Evaluator: `ghcr.io/cbizon/granular-mean-evaluator@sha256:77c4742436b703526c779565f8dc749156cc48cf661363241e93d24f8fad1b2d`
 
-Provision the trusted reference once before launching a campaign:
+The campaign and reference-upload manifest pin these digests by default.
+Campaign construction rejects the previous images because they predate the
+restored isolation invariants.
+
+The campaign defaults to the administrator-controlled personal `bizon`
+namespace and Brunner's `controlled-egress` network isolation mode. This mode
+accepts Sterling's baseline namespace-wide ingress policy while continuing to
+reject any additive egress policy that selects Brunner pipeline, stager, or
+artifact-reader Pods. Audit the namespace NetworkPolicies before each launch.
+
+The reference manifests are namespace-neutral. This variable is optional but
+keeps the provisioning commands explicit:
 
 ```bash
-kubectl apply -f deploy/sterling-reference-pvc.yaml
-kubectl apply -f deploy/sterling-reference-upload.yaml
-kubectl cp reference/. \
-  bizon/granular-mean-reference-upload:/reference
-kubectl exec -n bizon granular-mean-reference-upload -- \
-  python -m granular_mean.reference_validation \
+export GRANULAR_MEAN_STERLING_NAMESPACE="${GRANULAR_MEAN_STERLING_NAMESPACE:-bizon}"
+```
+
+Provision the trusted reference once before launching a campaign. Apply the
+deny-all upload policy before starting the upload pod:
+
+```bash
+kubectl apply -n "$GRANULAR_MEAN_STERLING_NAMESPACE" \
+  -f deploy/sterling-reference-pvc.yaml
+kubectl apply -n "$GRANULAR_MEAN_STERLING_NAMESPACE" \
+  -f deploy/sterling-reference-network-policy.yaml
+kubectl apply -n "$GRANULAR_MEAN_STERLING_NAMESPACE" \
+  -f deploy/sterling-reference-upload.yaml
+kubectl cp -n "$GRANULAR_MEAN_STERLING_NAMESPACE" reference/. \
+  granular-mean-reference-upload:/reference
+kubectl exec -n "$GRANULAR_MEAN_STERLING_NAMESPACE" \
+  granular-mean-reference-upload -- \
+  granular-reference-validate \
   --reference-root /reference
-kubectl annotate pvc -n bizon granular-mean-reference-v1 \
+kubectl annotate pvc -n "$GRANULAR_MEAN_STERLING_NAMESPACE" \
+  granular-mean-reference-v1 \
   dev.brunner/reference-manifest-sha256="$(
     shasum -a 256 reference/manifest.json | awk '{print $1}'
   )" \
   --overwrite
-kubectl delete pod -n bizon granular-mean-reference-upload
+kubectl delete pod -n "$GRANULAR_MEAN_STERLING_NAMESPACE" \
+  granular-mean-reference-upload
+kubectl delete -n "$GRANULAR_MEAN_STERLING_NAMESPACE" \
+  -f deploy/sterling-reference-network-policy.yaml
 ```
 
 Do not annotate the claim until the upload and remote validation have
@@ -170,10 +205,13 @@ UV_CACHE_DIR=.uv-cache uv run brunner \
   --poll-seconds 30
 ```
 
-Set `GRANULAR_MEAN_AGENT_IMAGE` or `GRANULAR_MEAN_EVALUATOR_IMAGE` only to
-override the digest-pinned defaults. The evaluator requests 4 CPUs and 16 GiB
-of memory, with limits of 8 CPUs and 32 GiB, plus 1 GiB requested and 4 GiB
-limited ephemeral storage. Override those values with
+The campaign defaults to the published digest-pinned builds above. Override
+`GRANULAR_MEAN_AGENT_IMAGE` or `GRANULAR_MEAN_EVALUATOR_IMAGE` only to use
+another immutable build. The evaluator requests
+3 CPUs and 16 GiB of memory, with limits of 8 CPUs and 64 GiB, plus 1 GiB
+requested and 3 GiB limited ephemeral storage. Together with Sterling's proxy
+defaults, those values remain below the namespace CPU and ephemeral-storage
+quotas. Override them with
 `GRANULAR_MEAN_EVALUATOR_CPU_REQUEST`,
 `GRANULAR_MEAN_EVALUATOR_CPU_LIMIT`,
 `GRANULAR_MEAN_EVALUATOR_MEMORY_REQUEST`,
@@ -193,10 +231,13 @@ data. Override those benchmark requirements with
 `GRANULAR_MEAN_AGENT_EPHEMERAL_STORAGE_LIMIT`. Set
 `GRANULAR_MEAN_MAX_PARALLEL` to a positive integer to increase concurrency.
 Set `GRANULAR_MEAN_CAMPAIGN_ROOT` to change the default state directory at
-`campaign-runs/sol-5-6-all-efforts-v1`.
+`campaign-runs/sol-5-6-all-efforts-v2`.
 
-Sterling settings can be overridden with
-`GRANULAR_MEAN_STERLING_NAMESPACE`,
+The Sterling namespace defaults to `bizon` and can be overridden with
+`GRANULAR_MEAN_STERLING_NAMESPACE`. Network isolation defaults to
+`controlled-egress`; set `GRANULAR_MEAN_STERLING_NETWORK_ISOLATION_MODE=strict`
+when using a dedicated namespace with exclusive ingress and egress policies.
+Other Sterling settings can be overridden with
 `GRANULAR_MEAN_STERLING_STORAGE_SIZE`,
 `GRANULAR_MEAN_STERLING_STORAGE_CLASS`,
 `GRANULAR_MEAN_STERLING_SERVICE_ACCOUNT`,
@@ -220,7 +261,7 @@ so newly added models or effort levels cannot silently skip qualitative
 assessment.
 
 The launcher pins the campaign to the `azure` Codex provider, the
-`gpt-5.6-sol` model, and the four effort levels above. Override
+`gpt-5.6-sol` model, and the six effort levels above. Override
 `GRANULAR_MEAN_CODEX_BASE_URL`, `GRANULAR_MEAN_CODEX_PROVIDER_ID`,
 `GRANULAR_MEAN_CODEX_PROVIDER_NAME`, or
 `GRANULAR_MEAN_CODEX_ENVIRONMENT_KEY` only when the Azure deployment
