@@ -13,7 +13,9 @@ dependencies = [
 
 [project.scripts]
 granular-mean-codex = "granular_mean.codex_wrapper:main"
+granular-mean-evaluator = "granular_mean.evaluator:main"
 granular-reference = "granular_mean.reference:main"
+granular-reference-validate = "granular_mean.reference_validation:main"
 
 [dependency-groups]
 dev = [

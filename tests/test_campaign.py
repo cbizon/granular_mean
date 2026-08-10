@@ -33,9 +33,11 @@ from granular_mean.campaign import (
     DEFAULT_STERLING_CODEX_SECRET,
     DEFAULT_STERLING_COMMAND_TIMEOUT_SECONDS,
     DEFAULT_STERLING_NAMESPACE,
+    DEFAULT_STERLING_NETWORK_ISOLATION_MODE,
     DEFAULT_STERLING_PROXY_IMAGE,
     DEFAULT_STERLING_REFERENCE_CLAIM,
     NESTED_SANDBOX_BYPASS_ENVIRONMENT,
+    RETIRED_AGENT_IMAGE,
     build_campaign,
     build_campaign_trials,
 )
@@ -53,6 +55,7 @@ from granular_mean.definition import (
     DEFAULT_EVALUATOR_MEMORY_REQUEST,
     DEFAULT_REVIEWER_EFFORT,
     DEFAULT_REVIEWER_MODEL,
+    RETIRED_EVALUATOR_IMAGE,
     build_definition,
     build_reviewed_definition,
 )
@@ -73,6 +76,16 @@ AZURE_CODEX_ARGUMENTS = [
     "-c",
     "model_providers.azure.supports_websockets=false",
 ]
+TEST_AGENT_IMAGE = "ghcr.io/example/agent@sha256:" + "a" * 64
+TEST_EVALUATOR_IMAGE = "ghcr.io/example/evaluator@sha256:" + "b" * 64
+
+
+def _set_hardened_images(monkeypatch) -> None:
+    monkeypatch.setenv("GRANULAR_MEAN_AGENT_IMAGE", TEST_AGENT_IMAGE)
+    monkeypatch.setenv(
+        "GRANULAR_MEAN_EVALUATOR_IMAGE",
+        TEST_EVALUATOR_IMAGE,
+    )
 
 
 def test_campaign_runs_sol_at_every_supported_effort() -> None:
@@ -121,7 +134,15 @@ def test_campaign_uses_sterling_backend_and_configured_parallelism(
 ) -> None:
     monkeypatch.setenv("GRANULAR_MEAN_CAMPAIGN_ROOT", str(tmp_path))
     monkeypatch.setenv("GRANULAR_MEAN_MAX_PARALLEL", "2")
-    monkeypatch.setenv("GRANULAR_MEAN_AGENT_IMAGE", "agent:test")
+    monkeypatch.delenv(
+        "GRANULAR_MEAN_STERLING_NAMESPACE",
+        raising=False,
+    )
+    monkeypatch.delenv(
+        "GRANULAR_MEAN_STERLING_NETWORK_ISOLATION_MODE",
+        raising=False,
+    )
+    _set_hardened_images(monkeypatch)
     definition = build_reviewed_definition()
     contract = load_output_contract(definition.contract_path)
 
@@ -130,14 +151,18 @@ def test_campaign_uses_sterling_backend_and_configured_parallelism(
     assert runner.plan.campaign_id == CAMPAIGN_ID
     assert runner.plan.root == tmp_path.resolve()
     assert runner.plan.max_parallel == 2
-    assert runner.plan.backend_image == "agent:test"
+    assert runner.plan.backend_image == TEST_AGENT_IMAGE
     assert runner.plan.provider_executable == "granular-mean-codex"
     assert isinstance(runner.backend, KubernetesBackend)
     assert runner.backend.profile.namespace == DEFAULT_STERLING_NAMESPACE
-    assert runner.backend.profile.agent_image == "agent:test"
+    assert (
+        runner.backend.profile.network_isolation_mode
+        == DEFAULT_STERLING_NETWORK_ISOLATION_MODE
+    )
+    assert runner.backend.profile.agent_image == TEST_AGENT_IMAGE
     assert (
         runner.backend.profile.artifact_reader_image
-        == DEFAULT_EVALUATOR_IMAGE
+        == TEST_EVALUATOR_IMAGE
     )
     assert (
         runner.backend.profile.reference_claim_name
@@ -180,6 +205,7 @@ def test_campaign_accepts_artifact_stream_overrides(
     tmp_path,
 ) -> None:
     monkeypatch.setenv("GRANULAR_MEAN_CAMPAIGN_ROOT", str(tmp_path))
+    _set_hardened_images(monkeypatch)
     monkeypatch.setenv(
         "GRANULAR_MEAN_STERLING_ARTIFACT_CHUNK_BYTES",
         str(512 * 1024),
@@ -207,7 +233,7 @@ def test_campaign_workload_uses_containerized_azure_launcher(
     tmp_path,
 ) -> None:
     monkeypatch.setenv("GRANULAR_MEAN_CAMPAIGN_ROOT", str(tmp_path))
-    monkeypatch.setenv("GRANULAR_MEAN_AGENT_IMAGE", "agent:test")
+    _set_hardened_images(monkeypatch)
     definition = build_reviewed_definition()
     contract = load_output_contract(definition.contract_path)
     runner = build_campaign(definition, contract)
@@ -230,7 +256,7 @@ def test_campaign_workload_uses_containerized_azure_launcher(
         "--provider-executable",
         "granular-mean-codex",
     )
-    assert workload.image == "agent:test"
+    assert workload.image == TEST_AGENT_IMAGE
     assert workload.secret_environment == {
         "AZURE_OPENAI_API_KEY": (
             DEFAULT_STERLING_CODEX_SECRET,
@@ -238,11 +264,9 @@ def test_campaign_workload_uses_containerized_azure_launcher(
         )
     }
     assert workload.evaluation is not None
-    assert workload.evaluation.image == DEFAULT_EVALUATOR_IMAGE
+    assert workload.evaluation.image == TEST_EVALUATOR_IMAGE
     assert workload.evaluation.command == (
-        "python",
-        "-m",
-        "granular_mean.evaluator",
+        "granular-mean-evaluator",
     )
     assert workload.cpu_request == DEFAULT_AGENT_CPU_REQUEST
     assert workload.cpu_limit == DEFAULT_AGENT_CPU_LIMIT
@@ -264,6 +288,9 @@ def test_campaign_workload_uses_containerized_azure_launcher(
         {},
         proxy_url="http://10.96.4.12:3128",
     )
+    assert job["metadata"]["annotations"][
+        "dev.brunner/network-isolation-mode"
+    ] == DEFAULT_STERLING_NETWORK_ISOLATION_MODE
     pod = job["spec"]["template"]["spec"]
     agent = pod["initContainers"][0]
     evaluator = pod["containers"][0]
@@ -320,6 +347,7 @@ def test_campaign_workload_accepts_resource_overrides(
     tmp_path,
 ) -> None:
     monkeypatch.setenv("GRANULAR_MEAN_CAMPAIGN_ROOT", str(tmp_path))
+    _set_hardened_images(monkeypatch)
     monkeypatch.setenv("GRANULAR_MEAN_AGENT_CPU_REQUEST", "1500m")
     monkeypatch.setenv("GRANULAR_MEAN_AGENT_CPU_LIMIT", "6")
     monkeypatch.setenv("GRANULAR_MEAN_AGENT_MEMORY_REQUEST", "12Gi")
@@ -354,7 +382,7 @@ def test_campaign_workload_accepts_resource_overrides(
     assert workload.ephemeral_storage_limit == "2Gi"
 
 
-def test_campaign_defaults_to_pinned_agent_image(
+def test_campaign_rejects_retired_published_images(
     monkeypatch,
     tmp_path,
 ) -> None:
@@ -363,14 +391,33 @@ def test_campaign_defaults_to_pinned_agent_image(
     definition = build_reviewed_definition()
     contract = load_output_contract(definition.contract_path)
 
+    assert DEFAULT_AGENT_IMAGE == RETIRED_AGENT_IMAGE
+    assert DEFAULT_EVALUATOR_IMAGE == RETIRED_EVALUATOR_IMAGE
+    with pytest.raises(RuntimeError, match="predate the restored"):
+        build_campaign(definition, contract)
+
+
+def test_campaign_accepts_strict_dedicated_namespace(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("GRANULAR_MEAN_CAMPAIGN_ROOT", str(tmp_path))
+    monkeypatch.setenv(
+        "GRANULAR_MEAN_STERLING_NAMESPACE",
+        "benchmark-test",
+    )
+    monkeypatch.setenv(
+        "GRANULAR_MEAN_STERLING_NETWORK_ISOLATION_MODE",
+        "strict",
+    )
+    _set_hardened_images(monkeypatch)
+    definition = build_reviewed_definition()
+    contract = load_output_contract(definition.contract_path)
+
     runner = build_campaign(definition, contract)
 
-    assert runner.plan.backend_image == DEFAULT_AGENT_IMAGE
-    assert runner.backend.profile.agent_image == DEFAULT_AGENT_IMAGE
-    assert (
-        runner.backend.profile.artifact_reader_image
-        == DEFAULT_EVALUATOR_IMAGE
-    )
+    assert runner.backend.profile.namespace == "benchmark-test"
+    assert runner.backend.profile.network_isolation_mode == "strict"
 
 
 def test_images_pin_current_brunner_build() -> None:
@@ -380,13 +427,22 @@ def test_images_pin_current_brunner_build() -> None:
         root / "containers" / "evaluator.Dockerfile"
     ).read_text()
 
-    brunner_revision = (
-        "f3e01c1913a49e7440fa455566200c97751b9655"
-    )
-    assert f"ARG BRUNNER_REVISION={brunner_revision}" in agent
-    assert f"ARG BRUNNER_REVISION={brunner_revision}" in evaluator
+    assert "ARG BRUNNER_REVISION\n" in agent
+    assert "ARG BRUNNER_REVISION\n" in evaluator
+    assert "ARG BRUNNER_REVISION=" not in agent
+    assert "ARG BRUNNER_REVISION=" not in evaluator
+    assert 'RUN test -n "${BRUNNER_REVISION}"' in agent
+    assert 'RUN test -n "${BRUNNER_REVISION}"' in evaluator
     assert "COPY --from=brunner" in agent
     assert "COPY --from=brunner" in evaluator
+    assert "COPY src/ src/" not in agent
+    assert "COPY src/granular_mean/agent.py" in agent
+    assert "COPY src/granular_mean/codex_wrapper.py" in agent
+    assert "granular_mean/evaluator.py" not in agent
+    assert '"numpy==2.2.6"' in evaluator
+    assert '"pillow==12.3.0"' in evaluator
+    assert '"scipy==1.18.0"' in evaluator
+    assert "WORKDIR /tmp" in evaluator
     assert DEFAULT_AGENT_IMAGE == (
         "ghcr.io/cbizon/granular-mean-agent@"
         "sha256:8b785dc13f0c52ad53ddd59088b210c64327dd1dfedd38df4b5d952f76c99868"
@@ -397,14 +453,30 @@ def test_images_pin_current_brunner_build() -> None:
     )
 
 
+def test_reference_upload_is_network_isolated() -> None:
+    root = Path(__file__).parents[1]
+    pvc = (root / "deploy" / "sterling-reference-pvc.yaml").read_text()
+    policy = (
+        root / "deploy" / "sterling-reference-network-policy.yaml"
+    ).read_text()
+    upload = (root / "deploy" / "sterling-reference-upload.yaml").read_text()
+
+    assert "policyTypes:\n    - Ingress\n    - Egress" in policy
+    assert "ingress: []" in policy
+    assert "egress: []" in policy
+    assert "automountServiceAccountToken: false" in upload
+    assert "enableServiceLinks: false" in upload
+    assert "namespace:" not in pvc
+    assert "namespace:" not in policy
+    assert "namespace:" not in upload
+
+
 def test_definition_requires_image_backed_sterling_evaluation() -> None:
     definition = build_definition()
 
     assert definition.evaluation.image == DEFAULT_EVALUATOR_IMAGE
     assert definition.evaluation.command == (
-        "python",
-        "-m",
-        "granular_mean.evaluator",
+        "granular-mean-evaluator",
     )
     assert definition.evaluation.cpu_request == DEFAULT_EVALUATOR_CPU_REQUEST
     assert definition.evaluation.cpu_limit == DEFAULT_EVALUATOR_CPU_LIMIT
@@ -415,19 +487,20 @@ def test_definition_requires_image_backed_sterling_evaluation() -> None:
     assert definition.evaluation.memory_limit == DEFAULT_EVALUATOR_MEMORY_LIMIT
     assert definition.reference is not None
     assert definition.reference.validate_command == (
-        "python",
-        "-m",
-        "granular_mean.reference_validation",
+        "granular-reference-validate",
     )
 
 
-def test_provider_settings_pin_model_efforts_and_azure() -> None:
+@pytest.mark.parametrize("effort", CODEX_EFFORTS)
+def test_provider_settings_pin_model_efforts_and_azure(
+    effort: str,
+) -> None:
     settings = provider_settings(
         TrialIdentity(
-            test_id="sol-high",
+            test_id=f"sol-{effort}",
             provider="codex",
             model=CODEX_MODEL,
-            effort="high",
+            effort=effort,
         )
     )
 
@@ -571,7 +644,7 @@ def test_campaign_rejects_unreviewed_definition(
         build_campaign(definition, contract)
 
 
-@pytest.mark.parametrize("effort", [None, "max", "ultra"])
+@pytest.mark.parametrize("effort", [None, "minimal", "invalid"])
 def test_provider_settings_reject_unsupported_effort(
     effort: str | None,
 ) -> None:

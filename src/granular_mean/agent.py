@@ -9,7 +9,7 @@ from brunner.trial import TrialIdentity, load_trial_identity
 
 
 CODEX_MODEL = "gpt-5.6-sol"
-CODEX_EFFORTS = ("low", "medium", "high", "xhigh")
+CODEX_EFFORTS = ("low", "medium", "high", "xhigh", "max", "ultra")
 DEFAULT_CODEX_PROVIDER_ID = "azure"
 DEFAULT_CODEX_PROVIDER_NAME = "Azure OpenAI"
 DEFAULT_CODEX_BASE_URL = (

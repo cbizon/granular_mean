@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-ARG BRUNNER_REVISION=f3e01c1913a49e7440fa455566200c97751b9655
+ARG BRUNNER_REVISION
 
 FROM python:3.12-bookworm AS python-builder
 
@@ -15,7 +15,10 @@ COPY src/ src/
 
 RUN /opt/venv/bin/pip install --no-cache-dir \
        /build/brunner \
-       . \
+       "numpy==2.2.6" \
+       "pillow==12.3.0" \
+       "scipy==1.18.0" \
+    && /opt/venv/bin/pip install --no-cache-dir --no-deps . \
     && /opt/venv/bin/python -c \
        "import brunner, granular_mean.evaluator; print(brunner.__version__)"
 
@@ -26,15 +29,24 @@ LABEL org.opencontainers.image.source="https://github.com/cbizon/granular_mean"
 ARG BRUNNER_REVISION
 LABEL org.opencontainers.image.brunner-revision="${BRUNNER_REVISION}"
 
+RUN test -n "${BRUNNER_REVISION}"
+
 RUN useradd --create-home --uid 1000 benchmark
 
 COPY --from=python-builder /opt/venv /opt/venv
 
 ENV PATH=/opt/venv/bin:$PATH \
-    PYTHONUNBUFFERED=1
+    HOME=/tmp/home \
+    MPLCONFIGDIR=/tmp/matplotlib \
+    NUMBA_CACHE_DIR=/tmp/numba \
+    PIP_NO_INDEX=1 \
+    PYTHONNOUSERSITE=1 \
+    PYTHONSAFEPATH=1 \
+    PYTHONUNBUFFERED=1 \
+    XDG_CACHE_HOME=/tmp/cache
 
 USER benchmark
-WORKDIR /brunner/trial/workspace
+WORKDIR /tmp
 
 ENTRYPOINT []
 CMD ["python", "-m", "brunner.evaluation_cli", "--help"]
