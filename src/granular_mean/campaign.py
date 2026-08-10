@@ -30,13 +30,20 @@ from granular_mean.definition import (
 CAMPAIGN_VARIANT = "sol-5-6-all-efforts-v2"
 CAMPAIGN_ID = f"granular-figure1-{CAMPAIGN_VARIANT}"
 DEFAULT_MAX_PARALLEL = 1
-RETIRED_AGENT_IMAGE = (
-    "ghcr.io/cbizon/granular-mean-agent@"
-    "sha256:8b785dc13f0c52ad53ddd59088b210c64327dd1dfedd38df4b5d952f76c99868"
+RETIRED_AGENT_IMAGES = (
+    (
+        "ghcr.io/cbizon/granular-mean-agent@"
+        "sha256:8b785dc13f0c52ad53ddd59088b210c64327dd1dfedd38df4b5d952f76c99868"
+    ),
+    (
+        "ghcr.io/cbizon/granular-mean-agent@"
+        "sha256:487049af74c582eaf3af204af8d86a05fd57918ee6edfdae2409742c9699975d"
+    ),
 )
+RETIRED_AGENT_IMAGE = RETIRED_AGENT_IMAGES[0]
 DEFAULT_AGENT_IMAGE = (
     "ghcr.io/cbizon/granular-mean-agent@"
-    "sha256:487049af74c582eaf3af204af8d86a05fd57918ee6edfdae2409742c9699975d"
+    "sha256:b2065cc9f29fea74ee7fb0200192b5e725e54921312be62e39f15e89dc40a6bd"
 )
 DEFAULT_STERLING_PROXY_IMAGE = (
     "ubuntu/squid@"
@@ -181,7 +188,7 @@ def build_campaign(
     )
     evaluator_image = definition.evaluation.image
     if (
-        agent_image == RETIRED_AGENT_IMAGE
+        agent_image in RETIRED_AGENT_IMAGES
         or evaluator_image == RETIRED_EVALUATOR_IMAGE
     ):
         raise RuntimeError(

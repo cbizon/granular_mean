@@ -39,6 +39,7 @@ from granular_mean.campaign import (
     DEFAULT_STERLING_REFERENCE_CLAIM,
     NESTED_SANDBOX_BYPASS_ENVIRONMENT,
     RETIRED_AGENT_IMAGE,
+    RETIRED_AGENT_IMAGES,
     build_campaign,
     build_campaign_trials,
 )
@@ -412,6 +413,22 @@ def test_campaign_rejects_retired_published_images(
         build_campaign(definition, contract)
 
 
+def test_campaign_rejects_previous_broken_agent_image(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("GRANULAR_MEAN_CAMPAIGN_ROOT", str(tmp_path))
+    monkeypatch.setenv(
+        "GRANULAR_MEAN_AGENT_IMAGE",
+        RETIRED_AGENT_IMAGES[1],
+    )
+    definition = build_reviewed_definition()
+    contract = load_output_contract(definition.contract_path)
+
+    with pytest.raises(RuntimeError, match="predate the restored"):
+        build_campaign(definition, contract)
+
+
 def test_campaign_defaults_to_published_images(
     monkeypatch,
     tmp_path,
@@ -484,7 +501,7 @@ def test_images_pin_current_brunner_build() -> None:
     assert "WORKDIR /tmp" in evaluator
     assert DEFAULT_AGENT_IMAGE == (
         "ghcr.io/cbizon/granular-mean-agent@"
-        "sha256:487049af74c582eaf3af204af8d86a05fd57918ee6edfdae2409742c9699975d"
+        "sha256:b2065cc9f29fea74ee7fb0200192b5e725e54921312be62e39f15e89dc40a6bd"
     )
     assert DEFAULT_EVALUATOR_IMAGE == (
         "ghcr.io/cbizon/granular-mean-evaluator@"
@@ -493,6 +510,10 @@ def test_images_pin_current_brunner_build() -> None:
     assert RETIRED_AGENT_IMAGE == (
         "ghcr.io/cbizon/granular-mean-agent@"
         "sha256:8b785dc13f0c52ad53ddd59088b210c64327dd1dfedd38df4b5d952f76c99868"
+    )
+    assert RETIRED_AGENT_IMAGES[1] == (
+        "ghcr.io/cbizon/granular-mean-agent@"
+        "sha256:487049af74c582eaf3af204af8d86a05fd57918ee6edfdae2409742c9699975d"
     )
     assert RETIRED_EVALUATOR_IMAGE == (
         "ghcr.io/cbizon/granular-mean-evaluator@"

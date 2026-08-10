@@ -140,7 +140,7 @@ credentials.
 
 Published immutable Linux/AMD64 images:
 
-- Agent: `ghcr.io/cbizon/granular-mean-agent@sha256:487049af74c582eaf3af204af8d86a05fd57918ee6edfdae2409742c9699975d`
+- Agent: `ghcr.io/cbizon/granular-mean-agent@sha256:b2065cc9f29fea74ee7fb0200192b5e725e54921312be62e39f15e89dc40a6bd`
 - Evaluator: `ghcr.io/cbizon/granular-mean-evaluator@sha256:77c4742436b703526c779565f8dc749156cc48cf661363241e93d24f8fad1b2d`
 
 The campaign and reference-upload manifest pin these digests by default.
