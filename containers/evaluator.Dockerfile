@@ -13,12 +13,13 @@ WORKDIR /build/granular-mean
 COPY pyproject.toml README.md ./
 COPY src/ src/
 
-RUN /opt/venv/bin/pip install --no-cache-dir \
+RUN /opt/venv/bin/pip install --no-cache-dir --timeout 600 --retries 10 \
        /build/brunner \
        "numpy==2.2.6" \
        "pillow==12.3.0" \
        "scipy==1.18.0" \
-    && /opt/venv/bin/pip install --no-cache-dir --no-deps . \
+    && /opt/venv/bin/pip install \
+       --no-cache-dir --no-deps --timeout 600 --retries 10 . \
     && /opt/venv/bin/python -c \
        "import brunner, granular_mean.evaluator; print(brunner.__version__)"
 

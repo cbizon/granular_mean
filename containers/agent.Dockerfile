@@ -9,7 +9,7 @@ RUN python -m venv /opt/venv
 COPY --from=brunner pyproject.toml README.md /build/brunner/
 COPY --from=brunner src/ /build/brunner/src/
 
-RUN /opt/venv/bin/pip install --no-cache-dir \
+RUN /opt/venv/bin/pip install --no-cache-dir --timeout 600 --retries 10 \
        /build/brunner \
        "matplotlib==3.11.0" \
        "numba==0.66.0" \
@@ -26,7 +26,8 @@ COPY containers/agent-pyproject.toml pyproject.toml
 COPY src/granular_mean/__init__.py src/granular_mean/
 COPY src/granular_mean/agent.py src/granular_mean/
 COPY src/granular_mean/codex_wrapper.py src/granular_mean/
-RUN /opt/venv/bin/pip install --no-cache-dir --no-deps .
+RUN /opt/venv/bin/pip install \
+      --no-cache-dir --no-deps --timeout 600 --retries 10 .
 
 
 FROM node:22-bookworm-slim AS node-builder
