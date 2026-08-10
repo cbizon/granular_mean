@@ -47,6 +47,7 @@ DEFAULT_STERLING_NETWORK_ISOLATION_MODE = "controlled-egress"
 DEFAULT_STERLING_STORAGE_SIZE = "20Gi"
 DEFAULT_STERLING_REFERENCE_CLAIM = "granular-mean-reference-v1"
 DEFAULT_STERLING_CODEX_SECRET = "balls-bench-codex-azure"
+DEFAULT_STERLING_IMAGE_PULL_SECRET = "balls-bench-ghcr"
 DEFAULT_AGENT_CPU_REQUEST = "2"
 DEFAULT_AGENT_CPU_LIMIT = "8"
 DEFAULT_AGENT_MEMORY_REQUEST = "8Gi"
@@ -102,8 +103,9 @@ def _sterling_profile(
     artifact_reader_image: str,
     max_parallel: int,
 ) -> KubernetesProfile:
-    pull_secret = _optional_environment(
-        "GRANULAR_MEAN_STERLING_IMAGE_PULL_SECRET"
+    pull_secret = _resource_environment(
+        "GRANULAR_MEAN_STERLING_IMAGE_PULL_SECRET",
+        DEFAULT_STERLING_IMAGE_PULL_SECRET,
     )
     return KubernetesProfile(
         namespace=_resource_environment(
@@ -130,7 +132,7 @@ def _sterling_profile(
         service_account_name=_optional_environment(
             "GRANULAR_MEAN_STERLING_SERVICE_ACCOUNT"
         ),
-        image_pull_secrets=(pull_secret,) if pull_secret else (),
+        image_pull_secrets=(pull_secret,),
         nonsecret_environment={
             NESTED_SANDBOX_BYPASS_ENVIRONMENT: "true",
         },
