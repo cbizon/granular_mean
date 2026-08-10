@@ -153,44 +153,21 @@ accepts Sterling's baseline namespace-wide ingress policy while continuing to
 reject any additive egress policy that selects Brunner pipeline, stager, or
 artifact-reader Pods. Audit the namespace NetworkPolicies before each launch.
 
-The reference manifests are namespace-neutral. This variable is optional but
-keeps the provisioning commands explicit:
+The reference manifests are namespace-neutral. Provision the trusted reference
+once before launching a campaign:
 
 ```bash
-export GRANULAR_MEAN_STERLING_NAMESPACE="${GRANULAR_MEAN_STERLING_NAMESPACE:-bizon}"
+scripts/provision-sterling-reference.sh
 ```
 
-Provision the trusted reference once before launching a campaign. Apply the
-deny-all upload policy before starting the upload pod:
-
-```bash
-kubectl apply -n "$GRANULAR_MEAN_STERLING_NAMESPACE" \
-  -f deploy/sterling-reference-pvc.yaml
-kubectl apply -n "$GRANULAR_MEAN_STERLING_NAMESPACE" \
-  -f deploy/sterling-reference-network-policy.yaml
-kubectl apply -n "$GRANULAR_MEAN_STERLING_NAMESPACE" \
-  -f deploy/sterling-reference-upload.yaml
-kubectl cp -n "$GRANULAR_MEAN_STERLING_NAMESPACE" reference/. \
-  granular-mean-reference-upload:/reference
-kubectl exec -n "$GRANULAR_MEAN_STERLING_NAMESPACE" \
-  granular-mean-reference-upload -- \
-  granular-reference-validate \
-  --reference-root /reference
-kubectl annotate pvc -n "$GRANULAR_MEAN_STERLING_NAMESPACE" \
-  granular-mean-reference-v1 \
-  dev.brunner/reference-manifest-sha256="$(
-    shasum -a 256 reference/manifest.json | awk '{print $1}'
-  )" \
-  --overwrite
-kubectl delete pod -n "$GRANULAR_MEAN_STERLING_NAMESPACE" \
-  granular-mean-reference-upload
-kubectl delete -n "$GRANULAR_MEAN_STERLING_NAMESPACE" \
-  -f deploy/sterling-reference-network-policy.yaml
-```
-
-Do not annotate the claim until the upload and remote validation have
-completed. Brunner requires `ReadWriteMany` and checks this exact manifest
-digest before submitting a trial.
+The script defaults to namespace `bizon` and requires Kubernetes context
+`bizon@sterling`. Override those safeguards with
+`GRANULAR_MEAN_STERLING_NAMESPACE` and
+`GRANULAR_MEAN_STERLING_CONTEXT` only when intentionally targeting another
+namespace or cluster. It applies and waits for the `ReadWriteMany` PVC, isolates
+the temporary upload Pod, replaces the remote reference contents, validates
+them inside the evaluator image, records and verifies the manifest digest, and
+removes the temporary Pod and NetworkPolicy on success or failure.
 
 Initialize and run the campaign with:
 
