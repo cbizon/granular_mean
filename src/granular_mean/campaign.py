@@ -34,7 +34,10 @@ RETIRED_AGENT_IMAGE = (
     "ghcr.io/cbizon/granular-mean-agent@"
     "sha256:8b785dc13f0c52ad53ddd59088b210c64327dd1dfedd38df4b5d952f76c99868"
 )
-DEFAULT_AGENT_IMAGE = RETIRED_AGENT_IMAGE
+DEFAULT_AGENT_IMAGE = (
+    "ghcr.io/cbizon/granular-mean-agent@"
+    "sha256:487049af74c582eaf3af204af8d86a05fd57918ee6edfdae2409742c9699975d"
+)
 DEFAULT_STERLING_PROXY_IMAGE = (
     "ubuntu/squid@"
     "sha256:6a097f68bae708cedbabd6188d68c7e2e7a38cedd05a176e1cc0ba29e3bbe029"

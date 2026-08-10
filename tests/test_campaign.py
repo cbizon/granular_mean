@@ -387,14 +387,43 @@ def test_campaign_rejects_retired_published_images(
     tmp_path,
 ) -> None:
     monkeypatch.setenv("GRANULAR_MEAN_CAMPAIGN_ROOT", str(tmp_path))
-    monkeypatch.delenv("GRANULAR_MEAN_AGENT_IMAGE", raising=False)
+    monkeypatch.setenv(
+        "GRANULAR_MEAN_AGENT_IMAGE",
+        RETIRED_AGENT_IMAGE,
+    )
+    monkeypatch.setenv(
+        "GRANULAR_MEAN_EVALUATOR_IMAGE",
+        RETIRED_EVALUATOR_IMAGE,
+    )
     definition = build_reviewed_definition()
     contract = load_output_contract(definition.contract_path)
 
-    assert DEFAULT_AGENT_IMAGE == RETIRED_AGENT_IMAGE
-    assert DEFAULT_EVALUATOR_IMAGE == RETIRED_EVALUATOR_IMAGE
     with pytest.raises(RuntimeError, match="predate the restored"):
         build_campaign(definition, contract)
+
+
+def test_campaign_defaults_to_published_images(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("GRANULAR_MEAN_CAMPAIGN_ROOT", str(tmp_path))
+    monkeypatch.delenv("GRANULAR_MEAN_AGENT_IMAGE", raising=False)
+    monkeypatch.delenv(
+        "GRANULAR_MEAN_EVALUATOR_IMAGE",
+        raising=False,
+    )
+    definition = build_reviewed_definition()
+    contract = load_output_contract(definition.contract_path)
+
+    runner = build_campaign(definition, contract)
+
+    assert runner.plan.backend_image == DEFAULT_AGENT_IMAGE
+    assert runner.backend.profile.agent_image == DEFAULT_AGENT_IMAGE
+    assert (
+        runner.backend.profile.artifact_reader_image
+        == DEFAULT_EVALUATOR_IMAGE
+    )
+    assert runner.definition.evaluation.image == DEFAULT_EVALUATOR_IMAGE
 
 
 def test_campaign_accepts_strict_dedicated_namespace(
@@ -445,9 +474,17 @@ def test_images_pin_current_brunner_build() -> None:
     assert "WORKDIR /tmp" in evaluator
     assert DEFAULT_AGENT_IMAGE == (
         "ghcr.io/cbizon/granular-mean-agent@"
-        "sha256:8b785dc13f0c52ad53ddd59088b210c64327dd1dfedd38df4b5d952f76c99868"
+        "sha256:487049af74c582eaf3af204af8d86a05fd57918ee6edfdae2409742c9699975d"
     )
     assert DEFAULT_EVALUATOR_IMAGE == (
+        "ghcr.io/cbizon/granular-mean-evaluator@"
+        "sha256:77c4742436b703526c779565f8dc749156cc48cf661363241e93d24f8fad1b2d"
+    )
+    assert RETIRED_AGENT_IMAGE == (
+        "ghcr.io/cbizon/granular-mean-agent@"
+        "sha256:8b785dc13f0c52ad53ddd59088b210c64327dd1dfedd38df4b5d952f76c99868"
+    )
+    assert RETIRED_EVALUATOR_IMAGE == (
         "ghcr.io/cbizon/granular-mean-evaluator@"
         "sha256:6a2cdcb2a2e66ccbef8451f29dbdb246f3fa888052d24004f50b034457e19f05"
     )
@@ -466,6 +503,7 @@ def test_reference_upload_is_network_isolated() -> None:
     assert "egress: []" in policy
     assert "automountServiceAccountToken: false" in upload
     assert "enableServiceLinks: false" in upload
+    assert f"image: {DEFAULT_EVALUATOR_IMAGE}" in upload
     assert "namespace:" not in pvc
     assert "namespace:" not in policy
     assert "namespace:" not in upload

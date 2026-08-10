@@ -138,11 +138,14 @@ The smaller evaluator contains only Brunner, the benchmark package, and
 deterministic scoring dependencies; it contains no provider CLI or
 credentials.
 
-The previously published immutable images are retired because they predate
-these restored isolation invariants. Campaign construction rejects them:
+Published immutable Linux/AMD64 images:
 
-- Agent: `ghcr.io/cbizon/granular-mean-agent@sha256:8b785dc13f0c52ad53ddd59088b210c64327dd1dfedd38df4b5d952f76c99868`
-- Evaluator: `ghcr.io/cbizon/granular-mean-evaluator@sha256:6a2cdcb2a2e66ccbef8451f29dbdb246f3fa888052d24004f50b034457e19f05`
+- Agent: `ghcr.io/cbizon/granular-mean-agent@sha256:487049af74c582eaf3af204af8d86a05fd57918ee6edfdae2409742c9699975d`
+- Evaluator: `ghcr.io/cbizon/granular-mean-evaluator@sha256:77c4742436b703526c779565f8dc749156cc48cf661363241e93d24f8fad1b2d`
+
+The campaign and reference-upload manifest pin these digests by default.
+Campaign construction rejects the previous images because they predate the
+restored isolation invariants.
 
 The campaign defaults to the administrator-controlled personal `bizon`
 namespace and Brunner's `controlled-egress` network isolation mode. This mode
@@ -202,8 +205,9 @@ UV_CACHE_DIR=.uv-cache uv run brunner \
   --poll-seconds 30
 ```
 
-Set `GRANULAR_MEAN_AGENT_IMAGE` and `GRANULAR_MEAN_EVALUATOR_IMAGE` to the new
-digest-pinned builds before initializing the campaign. The evaluator requests
+The campaign defaults to the published digest-pinned builds above. Override
+`GRANULAR_MEAN_AGENT_IMAGE` or `GRANULAR_MEAN_EVALUATOR_IMAGE` only to use
+another immutable build. The evaluator requests
 3 CPUs and 16 GiB of memory, with limits of 8 CPUs and 64 GiB, plus 1 GiB
 requested and 3 GiB limited ephemeral storage. Together with Sterling's proxy
 defaults, those values remain below the namespace CPU and ephemeral-storage
