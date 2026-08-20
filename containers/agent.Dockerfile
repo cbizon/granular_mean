@@ -34,9 +34,15 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 FROM node:22-bookworm-slim AS node-builder
 
-ARG CODEX_VERSION=0.144.1
+ARG CODEX_VERSION
+ARG CLAUDE_CODE_VERSION
 
-RUN npm install -g "@openai/codex@${CODEX_VERSION}"
+RUN test -n "${CODEX_VERSION}" \
+    && test -n "${CLAUDE_CODE_VERSION}" \
+    && npm install -g \
+       "@openai/codex@${CODEX_VERSION}" \
+       "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
+    && npm cache clean --force
 
 
 FROM python:3.12-slim-bookworm
@@ -62,9 +68,16 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 COPY --from=python-builder /opt/venv /opt/venv
 COPY --from=node-builder /usr/local/bin/node /usr/local/bin/node
 COPY --from=node-builder /usr/local/lib/node_modules /usr/local/lib/node_modules
-RUN ln -s ../lib/node_modules/@openai/codex/bin/codex.js /usr/local/bin/codex
+RUN ln -s \
+       ../lib/node_modules/@openai/codex/bin/codex.js \
+       /usr/local/bin/codex-real \
+    && ln -s /opt/venv/bin/granular-mean-codex /usr/local/bin/codex \
+    && ln -s \
+       ../lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe \
+       /usr/local/bin/claude
 
 ENV PATH=/opt/venv/bin:$PATH \
+    GRANULAR_MEAN_CODEX_REAL_EXECUTABLE=codex-real \
     MPLCONFIGDIR=/tmp/matplotlib \
     NUMBA_CACHE_DIR=/tmp/numba \
     PIP_NO_INDEX=1 \

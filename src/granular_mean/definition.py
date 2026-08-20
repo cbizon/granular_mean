@@ -6,6 +6,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from brunner import (
+    ArtifactPolicy,
     BenchmarkDefinition,
     ChallengeDefinition,
     EvaluationDefinition,
@@ -19,18 +20,21 @@ from granular_mean.agent import (
     CODEX_MODEL,
     azure_codex_settings,
 )
+from granular_mean.images import (
+    DEFAULT_EVALUATOR_IMAGE,
+    RETIRED_EVALUATOR_IMAGE,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_REVIEWER_MODEL = CODEX_MODEL
 DEFAULT_REVIEWER_EFFORT = "xhigh"
-RETIRED_EVALUATOR_IMAGE = (
-    "ghcr.io/cbizon/granular-mean-evaluator@"
-    "sha256:6a2cdcb2a2e66ccbef8451f29dbdb246f3fa888052d24004f50b034457e19f05"
-)
-DEFAULT_EVALUATOR_IMAGE = (
-    "ghcr.io/cbizon/granular-mean-evaluator@"
-    "sha256:77c4742436b703526c779565f8dc749156cc48cf661363241e93d24f8fad1b2d"
+DEFAULT_REVIEWER_TIMEOUT_SECONDS = 24 * 60 * 60
+DEFAULT_REVIEWER_MAX_ATTEMPTS = 300
+DEFAULT_REVIEWER_RETRY_INITIAL_SECONDS = 30
+DEFAULT_REVIEWER_RETRY_MAX_SECONDS = 5 * 60
+V2_CAMPAIGN_REVIEW_CONTRACT_SHA256 = (
+    "29b75a2ecc9d4381e01b02fed97e11869c7f8c81ce3f27e742857ca2b3f03c6b"
 )
 DEFAULT_EVALUATOR_CPU_REQUEST = "3"
 DEFAULT_EVALUATOR_CPU_LIMIT = "8"
@@ -124,6 +128,16 @@ def build_definition() -> BenchmarkDefinition:
             max_activity_interval_seconds=48 * 60 * 60,
             submission_poll_seconds=2,
         ),
+        artifacts=ArtifactPolicy(
+            groups={
+                "raw-trajectories": (
+                    "workspace/submission/*.npz",
+                    "workspace/submission/**/*.npz",
+                ),
+            },
+            max_collection_bytes=1024 * 1024 * 1024,
+            max_diagnostic_collection_bytes=512 * 1024 * 1024,
+        ),
     )
 
 
@@ -153,19 +167,49 @@ def build_reviewed_definition() -> BenchmarkDefinition:
         "GRANULAR_MEAN_REVIEWER_EXECUTABLE"
     )
     if reviewer_executable is None and reviewer_provider == "codex":
-        reviewer_executable = str(
-            Path(sys.executable).with_name("granular-mean-codex")
-        )
+        reviewer_executable = "granular-mean-codex"
     review = QualitativeReviewDefinition(
         reviewer=reviewer,
         reviewer_executable=reviewer_executable,
-        required=False,
+        required=True,
         run_if_evaluation_failed=True,
         trial_evidence_paths=REVIEW_EVIDENCE,
-        timeout_seconds=60 * 60,
-        max_attempts=3,
+        timeout_seconds=DEFAULT_REVIEWER_TIMEOUT_SECONDS,
+        max_attempts=DEFAULT_REVIEWER_MAX_ATTEMPTS,
+        retry_initial_seconds=DEFAULT_REVIEWER_RETRY_INITIAL_SECONDS,
+        retry_max_seconds=DEFAULT_REVIEWER_RETRY_MAX_SECONDS,
     )
     return replace(
         build_definition(),
         qualitative_review=review,
     )
+
+
+def build_v2_campaign_recovery_definition() -> BenchmarkDefinition:
+    definition = build_reviewed_definition()
+    review = definition.qualitative_review
+    if review is None:
+        raise RuntimeError("qualitative review is not configured")
+    recovered = replace(
+        definition,
+        qualitative_review=replace(
+            review,
+            reviewer_executable=str(
+                Path(sys.executable).with_name("granular-mean-codex")
+            ),
+            required=False,
+            timeout_seconds=60 * 60,
+            max_attempts=3,
+            retry_initial_seconds=10,
+            retry_max_seconds=60,
+        ),
+    )
+    contract_sha256 = recovered.resolved_assessments()[
+        0
+    ].contract_manifest()["contract_sha256"]
+    if contract_sha256 != V2_CAMPAIGN_REVIEW_CONTRACT_SHA256:
+        raise RuntimeError(
+            "v2 campaign recovery assessment contract drifted: "
+            f"{contract_sha256}"
+        )
+    return recovered

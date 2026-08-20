@@ -6,14 +6,19 @@ from pathlib import Path
 
 import pytest
 
-from brunner.backends import KubernetesBackend
+from brunner import ClusterCampaign
 from brunner.backends.kubernetes import render_job
+from brunner.campaign import default_workload_factory
+from brunner.cluster import render_cluster_resources
 from brunner.contract import load_output_contract
 from brunner.trial import TrialIdentity
 
 from granular_mean import agent as agent_module
 from granular_mean.agent import (
-    CODEX_EFFORTS,
+    CAMPAIGN_CLAUDE_MODEL,
+    CAMPAIGN_CODEX_MODELS,
+    CAMPAIGN_EFFORT,
+    CAMPAIGN_EFFORTS,
     CODEX_MODEL,
     DEFAULT_CODEX_BASE_URL,
     azure_codex_settings,
@@ -25,21 +30,27 @@ from granular_mean.campaign import (
     DEFAULT_AGENT_CPU_REQUEST,
     DEFAULT_AGENT_EPHEMERAL_STORAGE_LIMIT,
     DEFAULT_AGENT_EPHEMERAL_STORAGE_REQUEST,
-    DEFAULT_AGENT_IMAGE,
     DEFAULT_AGENT_MEMORY_LIMIT,
     DEFAULT_AGENT_MEMORY_REQUEST,
+    DEFAULT_ASSESSMENT_CPU_LIMIT,
+    DEFAULT_ASSESSMENT_CPU_REQUEST,
+    DEFAULT_ASSESSMENT_MEMORY_LIMIT,
+    DEFAULT_ASSESSMENT_MEMORY_REQUEST,
+    DEFAULT_CONTROLLER_CONTROL_STORAGE_SIZE,
+    DEFAULT_CONTROLLER_RESULTS_STORAGE_SIZE,
+    DEFAULT_MAX_PARALLEL,
     DEFAULT_STERLING_ARTIFACT_CHUNK_ATTEMPTS,
     DEFAULT_STERLING_ARTIFACT_CHUNK_BYTES,
+    DEFAULT_STERLING_CLAUDE_SECRET,
+    DEFAULT_STERLING_CLAUDE_SECRET_KEY,
     DEFAULT_STERLING_CODEX_SECRET,
     DEFAULT_STERLING_COMMAND_TIMEOUT_SECONDS,
     DEFAULT_STERLING_IMAGE_PULL_SECRET,
     DEFAULT_STERLING_NAMESPACE,
     DEFAULT_STERLING_NETWORK_ISOLATION_MODE,
-    DEFAULT_STERLING_PROXY_IMAGE,
     DEFAULT_STERLING_REFERENCE_CLAIM,
+    DEFAULT_STERLING_STORAGE_CLASS,
     NESTED_SANDBOX_BYPASS_ENVIRONMENT,
-    RETIRED_AGENT_IMAGE,
-    RETIRED_AGENT_IMAGES,
     build_campaign,
     build_campaign_trials,
 )
@@ -52,14 +63,30 @@ from granular_mean.definition import (
     DEFAULT_EVALUATOR_CPU_REQUEST,
     DEFAULT_EVALUATOR_EPHEMERAL_STORAGE_LIMIT,
     DEFAULT_EVALUATOR_EPHEMERAL_STORAGE_REQUEST,
-    DEFAULT_EVALUATOR_IMAGE,
     DEFAULT_EVALUATOR_MEMORY_LIMIT,
     DEFAULT_EVALUATOR_MEMORY_REQUEST,
     DEFAULT_REVIEWER_EFFORT,
+    DEFAULT_REVIEWER_MAX_ATTEMPTS,
     DEFAULT_REVIEWER_MODEL,
-    RETIRED_EVALUATOR_IMAGE,
+    DEFAULT_REVIEWER_RETRY_INITIAL_SECONDS,
+    DEFAULT_REVIEWER_RETRY_MAX_SECONDS,
+    DEFAULT_REVIEWER_TIMEOUT_SECONDS,
+    V2_CAMPAIGN_REVIEW_CONTRACT_SHA256,
     build_definition,
     build_reviewed_definition,
+    build_v2_campaign_recovery_definition,
+)
+from granular_mean.images import (
+    DEFAULT_AGENT_IMAGE,
+    DEFAULT_CONTROLLER_IMAGE,
+    DEFAULT_EVALUATOR_IMAGE,
+    DEFAULT_REFERENCE_UPLOAD_IMAGE,
+    DEFAULT_SQUID_IMAGE,
+    RETIRED_AGENT_IMAGE,
+    RETIRED_AGENT_IMAGES,
+    RETIRED_EVALUATOR_IMAGE,
+    RETIRED_EVALUATOR_IMAGES,
+    is_unpublished_image,
 )
 
 
@@ -79,24 +106,52 @@ AZURE_CODEX_ARGUMENTS = [
     "model_providers.azure.supports_websockets=false",
 ]
 TEST_AGENT_IMAGE = "ghcr.io/example/agent@sha256:" + "a" * 64
-TEST_EVALUATOR_IMAGE = "ghcr.io/example/evaluator@sha256:" + "b" * 64
+TEST_CONTROLLER_IMAGE = "ghcr.io/example/controller@sha256:" + "b" * 64
 
 
-def _set_hardened_images(monkeypatch) -> None:
+def _set_published_images(monkeypatch) -> None:
     monkeypatch.setenv("GRANULAR_MEAN_AGENT_IMAGE", TEST_AGENT_IMAGE)
     monkeypatch.setenv(
+        "GRANULAR_MEAN_CONTROLLER_IMAGE",
+        TEST_CONTROLLER_IMAGE,
+    )
+    monkeypatch.setenv(
         "GRANULAR_MEAN_EVALUATOR_IMAGE",
-        TEST_EVALUATOR_IMAGE,
+        TEST_CONTROLLER_IMAGE,
     )
 
 
-def test_campaign_runs_sol_at_every_supported_effort() -> None:
+def _campaign(monkeypatch) -> ClusterCampaign:
+    _set_published_images(monkeypatch)
+    definition = build_reviewed_definition()
+    contract = load_output_contract(definition.contract_path)
+    return build_campaign(definition, contract)
+
+
+def test_campaign_runs_selected_models_at_low_effort() -> None:
     trials = build_campaign_trials()
 
-    assert tuple(trial.effort for trial in trials) == CODEX_EFFORTS
-    assert {trial.provider for trial in trials} == {"codex"}
-    assert {trial.model for trial in trials} == {CODEX_MODEL}
-    assert len({trial.test_id for trial in trials}) == len(CODEX_EFFORTS)
+    assert tuple(trial.model for trial in trials) == (
+        *CAMPAIGN_CODEX_MODELS,
+        CAMPAIGN_CLAUDE_MODEL,
+    )
+    assert {trial.effort for trial in trials} == {CAMPAIGN_EFFORT}
+    assert tuple(trial.provider for trial in trials) == (
+        "codex",
+        "codex",
+        "codex",
+        "claude",
+    )
+    codex_trials = trials[:3]
+    assert {trial.provider_id for trial in codex_trials} == {"azure"}
+    assert {trial.base_url for trial in codex_trials} == {
+        DEFAULT_CODEX_BASE_URL
+    }
+    assert {trial.environment_key for trial in codex_trials} == {
+        "AZURE_OPENAI_API_KEY"
+    }
+    assert trials[3].provider_id is None
+    assert len({trial.test_id for trial in trials}) == 4
 
 
 def test_remote_agent_delegates_to_brunner_protocol(
@@ -111,8 +166,6 @@ def test_remote_agent_delegates_to_brunner_protocol(
         assert sys.argv == [
             "granular-mean-agent",
             str(tmp_path),
-            "--provider-executable",
-            "granular-mean-codex",
         ]
 
     monkeypatch.setattr(
@@ -132,84 +185,70 @@ def test_remote_agent_delegates_to_brunner_protocol(
 
 def test_campaign_uses_sterling_backend_and_configured_parallelism(
     monkeypatch,
-    tmp_path,
 ) -> None:
-    monkeypatch.setenv("GRANULAR_MEAN_CAMPAIGN_ROOT", str(tmp_path))
     monkeypatch.setenv("GRANULAR_MEAN_MAX_PARALLEL", "2")
-    monkeypatch.delenv(
-        "GRANULAR_MEAN_STERLING_NAMESPACE",
-        raising=False,
-    )
-    monkeypatch.delenv(
-        "GRANULAR_MEAN_STERLING_NETWORK_ISOLATION_MODE",
-        raising=False,
-    )
-    _set_hardened_images(monkeypatch)
-    definition = build_reviewed_definition()
-    contract = load_output_contract(definition.contract_path)
+    campaign = _campaign(monkeypatch)
 
-    runner = build_campaign(definition, contract)
-
-    assert runner.plan.campaign_id == CAMPAIGN_ID
-    assert runner.plan.root == tmp_path.resolve()
-    assert runner.plan.max_parallel == 2
-    assert runner.plan.backend_image == TEST_AGENT_IMAGE
-    assert runner.plan.provider_executable == "granular-mean-codex"
-    assert isinstance(runner.backend, KubernetesBackend)
-    assert runner.backend.profile.namespace == DEFAULT_STERLING_NAMESPACE
+    assert campaign.plan.campaign_id == CAMPAIGN_ID
+    assert campaign.plan.max_parallel == 2
+    assert campaign.plan.backend_image == TEST_AGENT_IMAGE
+    assert campaign.plan.provider_executable is None
+    assert campaign.plan.max_pause_seconds is None
+    assert campaign.backend.namespace == DEFAULT_STERLING_NAMESPACE
     assert (
-        runner.backend.profile.network_isolation_mode
+        campaign.backend.network_isolation_mode
         == DEFAULT_STERLING_NETWORK_ISOLATION_MODE
     )
-    assert runner.backend.profile.agent_image == TEST_AGENT_IMAGE
+    assert campaign.backend.agent_image == TEST_AGENT_IMAGE
+    assert campaign.backend.artifact_reader_image == TEST_CONTROLLER_IMAGE
     assert (
-        runner.backend.profile.artifact_reader_image
-        == TEST_EVALUATOR_IMAGE
-    )
-    assert (
-        runner.backend.profile.reference_claim_name
+        campaign.backend.reference_claim_name
         == DEFAULT_STERLING_REFERENCE_CLAIM
     )
-    assert (
-        runner.backend.profile.proxy_image
-        == DEFAULT_STERLING_PROXY_IMAGE
-    )
-    assert runner.backend.profile.image_pull_secrets == (
+    assert campaign.backend.proxy_image == DEFAULT_SQUID_IMAGE
+    assert campaign.backend.storage_class_name == DEFAULT_STERLING_STORAGE_CLASS
+    assert campaign.backend.image_pull_secrets == (
         DEFAULT_STERLING_IMAGE_PULL_SECRET,
     )
-    assert runner.backend.profile.max_parallel == 2
+    assert campaign.backend.max_parallel == 2
+    assert campaign.backend.secret_environment == {}
+    assert campaign.backend.nonsecret_environment == {
+        NESTED_SANDBOX_BYPASS_ENVIRONMENT: "true",
+    }
+    assert campaign.controller.namespace == DEFAULT_STERLING_NAMESPACE
+    assert campaign.controller.image == TEST_CONTROLLER_IMAGE
     assert (
-        runner.backend.profile.artifact_chunk_bytes
-        == DEFAULT_STERLING_ARTIFACT_CHUNK_BYTES
+        campaign.controller.control_storage_size
+        == DEFAULT_CONTROLLER_CONTROL_STORAGE_SIZE
     )
     assert (
-        runner.backend.profile.artifact_chunk_attempts
-        == DEFAULT_STERLING_ARTIFACT_CHUNK_ATTEMPTS
+        campaign.controller.results_storage_size
+        == DEFAULT_CONTROLLER_RESULTS_STORAGE_SIZE
     )
-    assert (
-        runner.backend.profile.command_timeout_seconds
-        == DEFAULT_STERLING_COMMAND_TIMEOUT_SECONDS
-    )
-    assert runner.backend.profile.secret_environment == {}
-    assert runner.plan.provider_secret_environment == {
+    expected_secret = {
         "codex": {
             "AZURE_OPENAI_API_KEY": (
                 DEFAULT_STERLING_CODEX_SECRET,
                 "AZURE_OPENAI_API_KEY",
             )
-        }
+        },
+        "claude": {
+            DEFAULT_STERLING_CLAUDE_SECRET_KEY: (
+                DEFAULT_STERLING_CLAUDE_SECRET,
+                DEFAULT_STERLING_CLAUDE_SECRET_KEY,
+            )
+        },
     }
-    assert runner.backend.profile.nonsecret_environment == {
-        NESTED_SANDBOX_BYPASS_ENVIRONMENT: "true",
+    assert campaign.plan.provider_secret_environment == expected_secret
+    assert campaign.controller.reviewer_secret_environment == {
+        "codex": expected_secret["codex"],
     }
 
 
 def test_campaign_accepts_artifact_stream_overrides(
     monkeypatch,
-    tmp_path,
 ) -> None:
-    monkeypatch.setenv("GRANULAR_MEAN_CAMPAIGN_ROOT", str(tmp_path))
-    _set_hardened_images(monkeypatch)
+    _set_published_images(monkeypatch)
     monkeypatch.setenv(
         "GRANULAR_MEAN_STERLING_ARTIFACT_CHUNK_BYTES",
         str(512 * 1024),
@@ -225,29 +264,27 @@ def test_campaign_accepts_artifact_stream_overrides(
     definition = build_reviewed_definition()
     contract = load_output_contract(definition.contract_path)
 
-    runner = build_campaign(definition, contract)
+    campaign = build_campaign(definition, contract)
 
-    assert runner.backend.profile.artifact_chunk_bytes == 512 * 1024
-    assert runner.backend.profile.artifact_chunk_attempts == 7
-    assert runner.backend.profile.command_timeout_seconds == 900
+    assert campaign.backend.artifact_chunk_bytes == 512 * 1024
+    assert campaign.backend.artifact_chunk_attempts == 7
+    assert campaign.backend.command_timeout_seconds == 900
+    assert campaign.controller.command_timeout_seconds == 900
 
 
 def test_campaign_workload_uses_containerized_azure_launcher(
     monkeypatch,
     tmp_path,
 ) -> None:
-    monkeypatch.setenv("GRANULAR_MEAN_CAMPAIGN_ROOT", str(tmp_path))
-    _set_hardened_images(monkeypatch)
+    campaign = _campaign(monkeypatch)
     definition = build_reviewed_definition()
-    contract = load_output_contract(definition.contract_path)
-    runner = build_campaign(definition, contract)
-    campaign_trial = runner.plan.trials[0]
+    campaign_trial = campaign.plan.trials[0]
     trial = tmp_path / campaign_trial.test_id
 
-    workload = runner.workload_factory(
+    workload = default_workload_factory(
         trial,
         campaign_trial,
-        runner.plan,
+        campaign.plan,
         definition,
         "kubernetes",
     )
@@ -257,8 +294,14 @@ def test_campaign_workload_uses_containerized_azure_launcher(
         "-m",
         "brunner.agent_cli",
         "/brunner/trial",
-        "--provider-executable",
-        "granular-mean-codex",
+        "--provider-id",
+        "azure",
+        "--provider-name",
+        "Azure OpenAI",
+        "--environment-key",
+        "AZURE_OPENAI_API_KEY",
+        "--base-url",
+        DEFAULT_CODEX_BASE_URL,
     )
     assert workload.image == TEST_AGENT_IMAGE
     assert workload.secret_environment == {
@@ -268,10 +311,8 @@ def test_campaign_workload_uses_containerized_azure_launcher(
         )
     }
     assert workload.evaluation is not None
-    assert workload.evaluation.image == TEST_EVALUATOR_IMAGE
-    assert workload.evaluation.command == (
-        "granular-mean-evaluator",
-    )
+    assert workload.evaluation.image == TEST_CONTROLLER_IMAGE
+    assert workload.evaluation.command == ("granular-mean-evaluator",)
     assert workload.cpu_request == DEFAULT_AGENT_CPU_REQUEST
     assert workload.cpu_limit == DEFAULT_AGENT_CPU_LIMIT
     assert workload.memory_request == DEFAULT_AGENT_MEMORY_REQUEST
@@ -284,11 +325,12 @@ def test_campaign_workload_uses_containerized_azure_launcher(
         workload.ephemeral_storage_limit
         == DEFAULT_AGENT_EPHEMERAL_STORAGE_LIMIT
     )
+
     job = render_job(
         "granular-test",
         "granular-test-data",
         workload,
-        runner.backend.profile,
+        campaign.backend,
         {},
         proxy_url="http://10.96.4.12:3128",
     )
@@ -298,35 +340,20 @@ def test_campaign_workload_uses_containerized_azure_launcher(
     pod = job["spec"]["template"]["spec"]
     agent = pod["initContainers"][0]
     evaluator = pod["containers"][0]
-    assert agent["name"] == "agent"
-    assert evaluator["name"] == "evaluator"
-    assert agent["resources"] == {
-        "requests": {
-            "cpu": DEFAULT_AGENT_CPU_REQUEST,
-            "memory": DEFAULT_AGENT_MEMORY_REQUEST,
-            "ephemeral-storage": DEFAULT_AGENT_EPHEMERAL_STORAGE_REQUEST,
-        },
-        "limits": {
-            "cpu": DEFAULT_AGENT_CPU_LIMIT,
-            "memory": DEFAULT_AGENT_MEMORY_LIMIT,
-            "ephemeral-storage": DEFAULT_AGENT_EPHEMERAL_STORAGE_LIMIT,
-        },
+    assert agent["resources"]["requests"] == {
+        "cpu": DEFAULT_AGENT_CPU_REQUEST,
+        "memory": DEFAULT_AGENT_MEMORY_REQUEST,
+        "ephemeral-storage": DEFAULT_AGENT_EPHEMERAL_STORAGE_REQUEST,
     }
-    assert evaluator["resources"] == {
-        "requests": {
-            "cpu": DEFAULT_EVALUATOR_CPU_REQUEST,
-            "memory": DEFAULT_EVALUATOR_MEMORY_REQUEST,
-            "ephemeral-storage": (
-                DEFAULT_EVALUATOR_EPHEMERAL_STORAGE_REQUEST
-            ),
-        },
-        "limits": {
-            "cpu": DEFAULT_EVALUATOR_CPU_LIMIT,
-            "memory": DEFAULT_EVALUATOR_MEMORY_LIMIT,
-            "ephemeral-storage": (
-                DEFAULT_EVALUATOR_EPHEMERAL_STORAGE_LIMIT
-            ),
-        },
+    assert evaluator["resources"]["requests"] == {
+        "cpu": DEFAULT_EVALUATOR_CPU_REQUEST,
+        "memory": DEFAULT_EVALUATOR_MEMORY_REQUEST,
+        "ephemeral-storage": DEFAULT_EVALUATOR_EPHEMERAL_STORAGE_REQUEST,
+    }
+    assert evaluator["resources"]["limits"] == {
+        "cpu": DEFAULT_EVALUATOR_CPU_LIMIT,
+        "memory": DEFAULT_EVALUATOR_MEMORY_LIMIT,
+        "ephemeral-storage": DEFAULT_EVALUATOR_EPHEMERAL_STORAGE_LIMIT,
     }
     agent_environment = {item["name"] for item in agent["env"]}
     evaluator_environment = {item["name"] for item in evaluator["env"]}
@@ -346,12 +373,86 @@ def test_campaign_workload_uses_containerized_azure_launcher(
     assert reference_mount["readOnly"] is True
 
 
-def test_campaign_workload_accepts_resource_overrides(
+def test_haiku_workload_uses_claude_and_only_its_secret(
     monkeypatch,
     tmp_path,
 ) -> None:
-    monkeypatch.setenv("GRANULAR_MEAN_CAMPAIGN_ROOT", str(tmp_path))
-    _set_hardened_images(monkeypatch)
+    campaign = _campaign(monkeypatch)
+    definition = build_reviewed_definition()
+    campaign_trial = campaign.plan.trials[-1]
+
+    workload = default_workload_factory(
+        tmp_path / campaign_trial.test_id,
+        campaign_trial,
+        campaign.plan,
+        definition,
+        "kubernetes",
+    )
+
+    assert campaign_trial.provider == "claude"
+    assert workload.command == (
+        "python",
+        "-m",
+        "brunner.agent_cli",
+        "/brunner/trial",
+    )
+    assert workload.secret_environment == {
+        DEFAULT_STERLING_CLAUDE_SECRET_KEY: (
+            DEFAULT_STERLING_CLAUDE_SECRET,
+            DEFAULT_STERLING_CLAUDE_SECRET_KEY,
+        )
+    }
+
+
+def test_cluster_resources_run_the_orchestrator_in_kubernetes(
+    monkeypatch,
+) -> None:
+    campaign = _campaign(monkeypatch)
+    definition = build_reviewed_definition()
+
+    rendered = render_cluster_resources(
+        definition,
+        campaign,
+        benchmark_ref="granular_mean.definition:build_reviewed_definition",
+        campaign_ref="granular_mean.campaign",
+    )
+    by_kind: dict[str, list[dict]] = {}
+    for resource in rendered:
+        by_kind.setdefault(resource["kind"], []).append(resource)
+
+    assert len(by_kind["PersistentVolumeClaim"]) == 2
+    assert all(
+        item["spec"]["accessModes"] == ["ReadWriteMany"]
+        for item in by_kind["PersistentVolumeClaim"]
+    )
+    preparation = by_kind["Job"][0]["spec"]["template"]["spec"]
+    deployment = by_kind["Deployment"][0]["spec"]["template"]["spec"]
+    assert preparation["automountServiceAccountToken"] is False
+    assert deployment["automountServiceAccountToken"] is True
+    assert preparation["containers"][0]["image"] == TEST_CONTROLLER_IMAGE
+    assert deployment["containers"][0]["image"] == TEST_CONTROLLER_IMAGE
+    assert deployment["containers"][0]["resources"]["requests"] == {
+        "cpu": "500m",
+        "memory": "1Gi",
+    }
+    assert campaign.controller.assessment_cpu_request == (
+        DEFAULT_ASSESSMENT_CPU_REQUEST
+    )
+    assert campaign.controller.assessment_cpu_limit == (
+        DEFAULT_ASSESSMENT_CPU_LIMIT
+    )
+    assert campaign.controller.assessment_memory_request == (
+        DEFAULT_ASSESSMENT_MEMORY_REQUEST
+    )
+    assert campaign.controller.assessment_memory_limit == (
+        DEFAULT_ASSESSMENT_MEMORY_LIMIT
+    )
+
+
+def test_campaign_workload_accepts_resource_overrides(
+    monkeypatch,
+) -> None:
+    _set_published_images(monkeypatch)
     monkeypatch.setenv("GRANULAR_MEAN_AGENT_CPU_REQUEST", "1500m")
     monkeypatch.setenv("GRANULAR_MEAN_AGENT_CPU_LIMIT", "6")
     monkeypatch.setenv("GRANULAR_MEAN_AGENT_MEMORY_REQUEST", "12Gi")
@@ -370,37 +471,26 @@ def test_campaign_workload_accepts_resource_overrides(
     )
     definition = build_reviewed_definition()
     contract = load_output_contract(definition.contract_path)
-    runner = build_campaign(definition, contract)
-    campaign_trial = runner.plan.trials[0]
-    trial = tmp_path / campaign_trial.test_id
 
-    workload = runner.workload_factory(
-        trial,
-        campaign_trial,
-        runner.plan,
-        definition,
-        "kubernetes",
-    )
+    campaign = build_campaign(definition, contract)
 
-    assert workload.cpu_request == "1500m"
-    assert workload.cpu_limit == "6"
-    assert workload.memory_request == "12Gi"
-    assert workload.memory_limit == "24Gi"
-    assert workload.ephemeral_storage_request == "750Mi"
-    assert workload.ephemeral_storage_limit == "2Gi"
-    assert runner.backend.profile.image_pull_secrets == (
-        "custom-pull-secret",
-    )
+    assert campaign.plan.cpu_request == "1500m"
+    assert campaign.plan.cpu_limit == "6"
+    assert campaign.plan.memory_request == "12Gi"
+    assert campaign.plan.memory_limit == "24Gi"
+    assert campaign.plan.ephemeral_storage_request == "750Mi"
+    assert campaign.plan.ephemeral_storage_limit == "2Gi"
+    assert campaign.backend.image_pull_secrets == ("custom-pull-secret",)
+    assert campaign.controller.image_pull_secrets == ("custom-pull-secret",)
 
 
 def test_campaign_rejects_retired_published_images(
     monkeypatch,
-    tmp_path,
 ) -> None:
-    monkeypatch.setenv("GRANULAR_MEAN_CAMPAIGN_ROOT", str(tmp_path))
+    monkeypatch.setenv("GRANULAR_MEAN_AGENT_IMAGE", RETIRED_AGENT_IMAGE)
     monkeypatch.setenv(
-        "GRANULAR_MEAN_AGENT_IMAGE",
-        RETIRED_AGENT_IMAGE,
+        "GRANULAR_MEAN_CONTROLLER_IMAGE",
+        TEST_CONTROLLER_IMAGE,
     )
     monkeypatch.setenv(
         "GRANULAR_MEAN_EVALUATOR_IMAGE",
@@ -409,55 +499,72 @@ def test_campaign_rejects_retired_published_images(
     definition = build_reviewed_definition()
     contract = load_output_contract(definition.contract_path)
 
-    with pytest.raises(RuntimeError, match="predate the restored"):
+    with pytest.raises(RuntimeError, match="predate the cluster-resident"):
         build_campaign(definition, contract)
 
 
 def test_campaign_rejects_previous_broken_agent_image(
     monkeypatch,
-    tmp_path,
 ) -> None:
-    monkeypatch.setenv("GRANULAR_MEAN_CAMPAIGN_ROOT", str(tmp_path))
     monkeypatch.setenv(
         "GRANULAR_MEAN_AGENT_IMAGE",
         RETIRED_AGENT_IMAGES[1],
     )
+    monkeypatch.setenv(
+        "GRANULAR_MEAN_CONTROLLER_IMAGE",
+        TEST_CONTROLLER_IMAGE,
+    )
+    monkeypatch.setenv(
+        "GRANULAR_MEAN_EVALUATOR_IMAGE",
+        TEST_CONTROLLER_IMAGE,
+    )
     definition = build_reviewed_definition()
     contract = load_output_contract(definition.contract_path)
 
-    with pytest.raises(RuntimeError, match="predate the restored"):
+    with pytest.raises(RuntimeError, match="predate the cluster-resident"):
+        build_campaign(definition, contract)
+
+
+def test_campaign_rejects_pre_controller_evaluator_image(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("GRANULAR_MEAN_AGENT_IMAGE", TEST_AGENT_IMAGE)
+    monkeypatch.setenv(
+        "GRANULAR_MEAN_CONTROLLER_IMAGE",
+        RETIRED_EVALUATOR_IMAGES[1],
+    )
+    monkeypatch.setenv(
+        "GRANULAR_MEAN_EVALUATOR_IMAGE",
+        RETIRED_EVALUATOR_IMAGES[1],
+    )
+    definition = build_reviewed_definition()
+    contract = load_output_contract(definition.contract_path)
+
+    with pytest.raises(RuntimeError, match="predate the cluster-resident"):
         build_campaign(definition, contract)
 
 
 def test_campaign_defaults_to_published_images(
     monkeypatch,
-    tmp_path,
 ) -> None:
-    monkeypatch.setenv("GRANULAR_MEAN_CAMPAIGN_ROOT", str(tmp_path))
     monkeypatch.delenv("GRANULAR_MEAN_AGENT_IMAGE", raising=False)
-    monkeypatch.delenv(
-        "GRANULAR_MEAN_EVALUATOR_IMAGE",
-        raising=False,
-    )
+    monkeypatch.delenv("GRANULAR_MEAN_CONTROLLER_IMAGE", raising=False)
+    monkeypatch.delenv("GRANULAR_MEAN_EVALUATOR_IMAGE", raising=False)
     definition = build_reviewed_definition()
     contract = load_output_contract(definition.contract_path)
 
-    runner = build_campaign(definition, contract)
+    campaign = build_campaign(definition, contract)
 
-    assert runner.plan.backend_image == DEFAULT_AGENT_IMAGE
-    assert runner.backend.profile.agent_image == DEFAULT_AGENT_IMAGE
-    assert (
-        runner.backend.profile.artifact_reader_image
-        == DEFAULT_EVALUATOR_IMAGE
-    )
-    assert runner.definition.evaluation.image == DEFAULT_EVALUATOR_IMAGE
+    assert campaign.plan.backend_image == DEFAULT_AGENT_IMAGE
+    assert campaign.backend.agent_image == DEFAULT_AGENT_IMAGE
+    assert campaign.backend.artifact_reader_image == DEFAULT_CONTROLLER_IMAGE
+    assert campaign.controller.image == DEFAULT_CONTROLLER_IMAGE
+    assert definition.evaluation.image == DEFAULT_EVALUATOR_IMAGE
 
 
 def test_campaign_accepts_strict_dedicated_namespace(
     monkeypatch,
-    tmp_path,
 ) -> None:
-    monkeypatch.setenv("GRANULAR_MEAN_CAMPAIGN_ROOT", str(tmp_path))
     monkeypatch.setenv(
         "GRANULAR_MEAN_STERLING_NAMESPACE",
         "benchmark-test",
@@ -466,59 +573,46 @@ def test_campaign_accepts_strict_dedicated_namespace(
         "GRANULAR_MEAN_STERLING_NETWORK_ISOLATION_MODE",
         "strict",
     )
-    _set_hardened_images(monkeypatch)
-    definition = build_reviewed_definition()
-    contract = load_output_contract(definition.contract_path)
+    campaign = _campaign(monkeypatch)
 
-    runner = build_campaign(definition, contract)
-
-    assert runner.backend.profile.namespace == "benchmark-test"
-    assert runner.backend.profile.network_isolation_mode == "strict"
+    assert campaign.backend.namespace == "benchmark-test"
+    assert campaign.controller.namespace == "benchmark-test"
+    assert campaign.backend.network_isolation_mode == "strict"
 
 
 def test_images_pin_current_brunner_build() -> None:
     root = Path(__file__).parents[1]
     agent = (root / "containers" / "agent.Dockerfile").read_text()
-    evaluator = (
-        root / "containers" / "evaluator.Dockerfile"
+    controller = (
+        root / "containers" / "controller.Dockerfile"
     ).read_text()
+    dockerignore = (root / ".dockerignore").read_text().splitlines()
 
     assert "ARG BRUNNER_REVISION\n" in agent
-    assert "ARG BRUNNER_REVISION\n" in evaluator
-    assert "ARG BRUNNER_REVISION=" not in agent
-    assert "ARG BRUNNER_REVISION=" not in evaluator
+    assert "ARG BRUNNER_REVISION\n" in controller
+    assert "ARG CODEX_VERSION\n" in agent
+    assert "ARG CLAUDE_CODE_VERSION\n" in agent
+    assert "ARG CODEX_VERSION\n" in controller
+    assert "ARG KUBECTL_VERSION\n" in controller
     assert 'RUN test -n "${BRUNNER_REVISION}"' in agent
-    assert 'RUN test -n "${BRUNNER_REVISION}"' in evaluator
+    assert 'RUN test -n "${BRUNNER_REVISION}"' in controller
     assert "COPY --from=brunner" in agent
-    assert "COPY --from=brunner" in evaluator
-    assert "COPY src/ src/" not in agent
-    assert "COPY src/granular_mean/agent.py" in agent
-    assert "COPY src/granular_mean/codex_wrapper.py" in agent
+    assert "COPY --from=brunner" in controller
+    assert "COPY challenge/" not in agent
     assert "granular_mean/evaluator.py" not in agent
-    assert '"numpy==2.2.6"' in evaluator
-    assert '"pillow==12.3.0"' in evaluator
-    assert '"scipy==1.18.0"' in evaluator
-    assert "WORKDIR /tmp" in evaluator
-    assert DEFAULT_AGENT_IMAGE == (
-        "ghcr.io/cbizon/granular-mean-agent@"
-        "sha256:b2065cc9f29fea74ee7fb0200192b5e725e54921312be62e39f15e89dc40a6bd"
-    )
-    assert DEFAULT_EVALUATOR_IMAGE == (
-        "ghcr.io/cbizon/granular-mean-evaluator@"
-        "sha256:77c4742436b703526c779565f8dc749156cc48cf661363241e93d24f8fad1b2d"
-    )
-    assert RETIRED_AGENT_IMAGE == (
-        "ghcr.io/cbizon/granular-mean-agent@"
-        "sha256:8b785dc13f0c52ad53ddd59088b210c64327dd1dfedd38df4b5d952f76c99868"
-    )
-    assert RETIRED_AGENT_IMAGES[1] == (
-        "ghcr.io/cbizon/granular-mean-agent@"
-        "sha256:487049af74c582eaf3af204af8d86a05fd57918ee6edfdae2409742c9699975d"
-    )
-    assert RETIRED_EVALUATOR_IMAGE == (
-        "ghcr.io/cbizon/granular-mean-evaluator@"
-        "sha256:6a2cdcb2a2e66ccbef8451f29dbdb246f3fa888052d24004f50b034457e19f05"
-    )
+    assert "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" in agent
+    assert "/usr/local/bin/claude" in agent
+    assert "COPY challenge/" in controller
+    assert "COPY reference/manifest.json" in controller
+    assert "COPY reference/paper/" in controller
+    assert "/bin/linux/${TARGETARCH}/kubectl" in controller
+    assert "GRANULAR_MEAN_CODEX_BYPASS_NESTED_SANDBOX=true" in controller
+    assert "reference/generated" in dockerignore
+    assert "challenge" not in dockerignore
+    assert "reference" not in dockerignore
+    assert not is_unpublished_image(DEFAULT_AGENT_IMAGE)
+    assert not is_unpublished_image(DEFAULT_CONTROLLER_IMAGE)
+    assert DEFAULT_EVALUATOR_IMAGE == DEFAULT_CONTROLLER_IMAGE
 
 
 def test_reference_upload_is_network_isolated() -> None:
@@ -533,21 +627,34 @@ def test_reference_upload_is_network_isolated() -> None:
     assert "ingress: []" in policy
     assert "egress: []" in policy
     assert "automountServiceAccountToken: false" in upload
-    assert "enableServiceLinks: false" in upload
-    assert f"image: {DEFAULT_EVALUATOR_IMAGE}" in upload
+    assert f"image: {DEFAULT_REFERENCE_UPLOAD_IMAGE}" in upload
     assert "imagePullSecrets:\n    - name: balls-bench-ghcr" in upload
     assert "namespace:" not in pvc
     assert "namespace:" not in policy
     assert "namespace:" not in upload
 
 
+def test_campaign_launcher_only_supervises_brunner() -> None:
+    root = Path(__file__).parents[1]
+    launcher = (root / "scripts" / "manage-campaign.sh").read_text()
+
+    assert "campaign-submit" in launcher
+    assert "campaign-status" in launcher
+    assert "campaign-monitor" in launcher
+    assert "campaign-retrieve" in launcher
+    assert "campaign-delete" in launcher
+    assert "launchctl" not in launcher
+    assert "campaign-run" not in launcher
+    assert "campaign-init" not in launcher
+    assert "trial-assess" not in launcher
+    assert "campaign-step" not in launcher
+
+
 def test_definition_requires_image_backed_sterling_evaluation() -> None:
     definition = build_definition()
 
     assert definition.evaluation.image == DEFAULT_EVALUATOR_IMAGE
-    assert definition.evaluation.command == (
-        "granular-mean-evaluator",
-    )
+    assert definition.evaluation.command == ("granular-mean-evaluator",)
     assert definition.evaluation.cpu_request == DEFAULT_EVALUATOR_CPU_REQUEST
     assert definition.evaluation.cpu_limit == DEFAULT_EVALUATOR_CPU_LIMIT
     assert (
@@ -561,23 +668,56 @@ def test_definition_requires_image_backed_sterling_evaluation() -> None:
     )
 
 
-@pytest.mark.parametrize("effort", CODEX_EFFORTS)
-def test_provider_settings_pin_model_efforts_and_azure(
-    effort: str,
+def test_definition_excludes_raw_submission_trajectories() -> None:
+    definition = build_definition()
+
+    assert definition.artifacts.collect_evaluated_artifacts is False
+    assert definition.artifacts.groups["raw-trajectories"] == (
+        "workspace/submission/*.npz",
+        "workspace/submission/**/*.npz",
+    )
+    assert definition.artifacts.max_collection_bytes == 1024 * 1024 * 1024
+
+
+def test_prompt_states_the_full_execution_allowance() -> None:
+    root = Path(__file__).parents[1]
+    prompt = (root / "challenge" / "PROMPT.md").read_text()
+
+    assert "up to 48 hours of wall-clock time" in prompt
+
+
+@pytest.mark.parametrize("model", CAMPAIGN_CODEX_MODELS)
+def test_provider_settings_pin_codex_models_to_low_and_azure(
+    model: str,
 ) -> None:
     settings = provider_settings(
         TrialIdentity(
-            test_id=f"sol-{effort}",
+            test_id=f"{model}-low",
             provider="codex",
-            model=CODEX_MODEL,
-            effort=effort,
+            model=model,
+            effort=CAMPAIGN_EFFORT,
         )
     )
 
-    assert settings.allowed_efforts == CODEX_EFFORTS
+    assert settings.allowed_efforts == CAMPAIGN_EFFORTS
     assert settings.provider_id == "azure"
     assert settings.base_url == DEFAULT_CODEX_BASE_URL
     assert settings.environment_key == "AZURE_OPENAI_API_KEY"
+
+
+def test_provider_settings_accept_haiku_at_low() -> None:
+    settings = provider_settings(
+        TrialIdentity(
+            test_id="haiku-low",
+            provider="claude",
+            model=CAMPAIGN_CLAUDE_MODEL,
+            effort=CAMPAIGN_EFFORT,
+        )
+    )
+
+    assert settings.provider == "claude"
+    assert settings.allowed_efforts == CAMPAIGN_EFFORTS
+    assert settings.provider_id is None
 
 
 def test_codex_wrapper_bypasses_initial_nested_sandbox(
@@ -723,18 +863,34 @@ def test_reviewed_definition_defaults_to_azure_sol_xhigh() -> None:
         DEFAULT_REVIEWER_MODEL,
         DEFAULT_REVIEWER_EFFORT,
     )
-    assert review.reviewer_executable == str(
-        Path(sys.executable).with_name("granular-mean-codex")
+    assert review.reviewer_executable == "granular-mean-codex"
+    assert review.required is True
+    assert review.timeout_seconds == DEFAULT_REVIEWER_TIMEOUT_SECONDS
+    assert review.max_attempts == DEFAULT_REVIEWER_MAX_ATTEMPTS
+    assert (
+        review.retry_initial_seconds
+        == DEFAULT_REVIEWER_RETRY_INITIAL_SECONDS
     )
-    assert review.required is False
+    assert review.retry_max_seconds == DEFAULT_REVIEWER_RETRY_MAX_SECONDS
     assert "workspace/**/*.py" in review.trial_evidence_paths
+
+
+def test_v2_campaign_recovery_definition_preserves_review_contract() -> None:
+    with pytest.raises(
+        RuntimeError,
+        match="v2 campaign recovery assessment contract drifted",
+    ):
+        build_v2_campaign_recovery_definition()
+
+    assert V2_CAMPAIGN_REVIEW_CONTRACT_SHA256 == (
+        "29b75a2ecc9d4381e01b02fed97e11869c7f8c81ce3f27e742857ca2b3f03c6b"
+    )
 
 
 def test_campaign_rejects_unreviewed_definition(
     monkeypatch,
-    tmp_path,
 ) -> None:
-    monkeypatch.setenv("GRANULAR_MEAN_CAMPAIGN_ROOT", str(tmp_path))
+    _set_published_images(monkeypatch)
     definition = build_definition()
     contract = load_output_contract(definition.contract_path)
 
@@ -745,11 +901,11 @@ def test_campaign_rejects_unreviewed_definition(
         build_campaign(definition, contract)
 
 
-@pytest.mark.parametrize("effort", [None, "minimal", "invalid"])
+@pytest.mark.parametrize("effort", [None, "medium", "invalid"])
 def test_provider_settings_reject_unsupported_effort(
     effort: str | None,
 ) -> None:
-    with pytest.raises(ValueError, match="effort must be one of"):
+    with pytest.raises(ValueError, match="effort must be 'low'"):
         provider_settings(
             TrialIdentity(
                 test_id="invalid-effort",
@@ -762,10 +918,9 @@ def test_provider_settings_reject_unsupported_effort(
 
 def test_campaign_rejects_invalid_parallelism(
     monkeypatch,
-    tmp_path,
 ) -> None:
-    monkeypatch.setenv("GRANULAR_MEAN_CAMPAIGN_ROOT", str(tmp_path))
     monkeypatch.setenv("GRANULAR_MEAN_MAX_PARALLEL", "0")
+    _set_published_images(monkeypatch)
     definition = build_reviewed_definition()
     contract = load_output_contract(definition.contract_path)
 
@@ -827,3 +982,24 @@ def test_codex_wrapper_replaces_output_schema(
         "enum": ["ok"],
         "type": "string",
     }
+
+
+def test_campaign_default_parallelism_remains_sequential(
+    monkeypatch,
+) -> None:
+    campaign = _campaign(monkeypatch)
+
+    assert campaign.plan.max_parallel == DEFAULT_MAX_PARALLEL
+    assert campaign.backend.max_parallel == DEFAULT_MAX_PARALLEL
+    assert (
+        campaign.backend.artifact_chunk_bytes
+        == DEFAULT_STERLING_ARTIFACT_CHUNK_BYTES
+    )
+    assert (
+        campaign.backend.artifact_chunk_attempts
+        == DEFAULT_STERLING_ARTIFACT_CHUNK_ATTEMPTS
+    )
+    assert (
+        campaign.backend.command_timeout_seconds
+        == DEFAULT_STERLING_COMMAND_TIMEOUT_SECONDS
+    )

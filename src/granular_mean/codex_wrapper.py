@@ -168,9 +168,13 @@ def prepare_arguments(arguments: list[str]) -> list[str]:
 
 
 def main() -> None:
-    os.execvp(
+    executable = os.environ.get(
+        "GRANULAR_MEAN_CODEX_REAL_EXECUTABLE",
         "codex",
-        ("codex", *prepare_arguments(sys.argv[1:])),
+    )
+    os.execvp(
+        executable,
+        (executable, *prepare_arguments(sys.argv[1:])),
     )
 
 
