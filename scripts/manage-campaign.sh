@@ -10,7 +10,7 @@ BENCHMARK="${GRANULAR_MEAN_BENCHMARK:-granular_mean.definition:build_reviewed_de
 CAMPAIGN="${GRANULAR_MEAN_CAMPAIGN:-granular_mean.campaign}"
 EXPECTED_CONTEXT="${GRANULAR_MEAN_STERLING_CONTEXT:-bizon@sterling}"
 PORT="${GRANULAR_MEAN_CAMPAIGN_PORT:-8765}"
-RESULTS_DIR="${2:-${ROOT_DIR}/campaign-results/luna-terra-sol-haiku-low-cluster-v1}"
+RESULTS_DIR="${2:-${ROOT_DIR}/campaign-results/haiku-luna-terra-sol-low-cluster-v1}"
 KUBECTL="${KUBECTL:-kubectl}"
 
 fail() {

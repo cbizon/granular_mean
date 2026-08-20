@@ -32,7 +32,7 @@ from granular_mean.images import (
 )
 
 
-CAMPAIGN_VARIANT = "luna-terra-sol-haiku-low-cluster-v1"
+CAMPAIGN_VARIANT = "haiku-luna-terra-sol-low-cluster-v1"
 CAMPAIGN_ID = f"granular-figure1-{CAMPAIGN_VARIANT}"
 DEFAULT_MAX_PARALLEL = 1
 DEFAULT_STERLING_NAMESPACE = "bizon"
@@ -92,13 +92,13 @@ def build_campaign_trials() -> tuple[CampaignTrial, ...]:
         for settings in (azure_codex_settings(model, CAMPAIGN_EFFORT),)
     )
     return (
-        *codex_trials,
         CampaignTrial(
             test_id="claude-haiku-4-5-low-r01",
             provider="claude",
             model=CAMPAIGN_CLAUDE_MODEL,
             effort=CAMPAIGN_EFFORT,
         ),
+        *codex_trials,
     )
 
 

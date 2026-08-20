@@ -5,11 +5,11 @@ UNPUBLISHED_DIGEST = "0" * 64
 
 DEFAULT_AGENT_IMAGE = (
     "ghcr.io/cbizon/granular-mean-agent@sha256:"
-    "a8266fcda7c16d377a2557ef8221fa080240616498185f13677ec6fc29a34fdd"
+    "0d222e1700e49dcd24107c462c76500f0612811c6041227b66f29ac72f588537"
 )
 DEFAULT_CONTROLLER_IMAGE = (
     "ghcr.io/cbizon/granular-mean-controller@sha256:"
-    "d77903f27b14f83205ff0a8fb3142c943e1b25ad6c96ea04e365e5ea10b23fe1"
+    "0795d16f7952c03b00ccaf98447b6cdb1aed31e3bf1423c73d90fdf7e0f659f0"
 )
 DEFAULT_EVALUATOR_IMAGE = DEFAULT_CONTROLLER_IMAGE
 DEFAULT_SQUID_IMAGE = (
@@ -20,6 +20,10 @@ DEFAULT_SQUID_IMAGE = (
 DEFAULT_REFERENCE_UPLOAD_IMAGE = DEFAULT_CONTROLLER_IMAGE
 
 RETIRED_AGENT_IMAGES = (
+    (
+        "ghcr.io/cbizon/granular-mean-agent@sha256:"
+        "a8266fcda7c16d377a2557ef8221fa080240616498185f13677ec6fc29a34fdd"
+    ),
     (
         "ghcr.io/cbizon/granular-mean-agent@sha256:"
         "8b785dc13f0c52ad53ddd59088b210c64327dd1dfedd38df4b5d952f76c99868"
@@ -47,6 +51,10 @@ RETIRED_AGENT_IMAGES = (
 )
 RETIRED_AGENT_IMAGE = RETIRED_AGENT_IMAGES[0]
 RETIRED_CONTROLLER_IMAGES = (
+    (
+        "ghcr.io/cbizon/granular-mean-controller@sha256:"
+        "d77903f27b14f83205ff0a8fb3142c943e1b25ad6c96ea04e365e5ea10b23fe1"
+    ),
     (
         "ghcr.io/cbizon/granular-mean-controller@sha256:"
         "aa1787e6b82b8eb88df1d211b5b9663a8158f9e7a34681420e3dca5c8b47b30e"

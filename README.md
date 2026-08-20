@@ -106,9 +106,9 @@ multi-gigabyte trajectory artifacts.
 
 ## Campaign
 
-The campaign runs `gpt-5.6-luna`, `gpt-5.6-terra`, `gpt-5.6-sol`, and
-`claude-haiku-4-5`, once each at `low`. Trial IDs are stable within campaign
-`granular-figure1-luna-terra-sol-haiku-low-cluster-v1`.
+The campaign runs `claude-haiku-4-5`, `gpt-5.6-luna`, `gpt-5.6-terra`, and
+`gpt-5.6-sol`, in that order, once each at `low`. Trial IDs are stable within
+campaign `granular-figure1-haiku-luna-terra-sol-low-cluster-v1`.
 
 Brunner's orchestrator runs as a Kubernetes Deployment in namespace `bizon`.
 Its append-only state and finalized results live on separate `ReadWriteMany`
@@ -160,8 +160,8 @@ Both Dockerfiles require explicit Brunner and tool versions. The published
 immutable images are:
 
 ```bash
-ghcr.io/cbizon/granular-mean-agent@sha256:a8266fcda7c16d377a2557ef8221fa080240616498185f13677ec6fc29a34fdd
-ghcr.io/cbizon/granular-mean-controller@sha256:d77903f27b14f83205ff0a8fb3142c943e1b25ad6c96ea04e365e5ea10b23fe1
+ghcr.io/cbizon/granular-mean-agent@sha256:0d222e1700e49dcd24107c462c76500f0612811c6041227b66f29ac72f588537
+ghcr.io/cbizon/granular-mean-controller@sha256:0795d16f7952c03b00ccaf98447b6cdb1aed31e3bf1423c73d90fdf7e0f659f0
 ```
 
 They are pinned in `src/granular_mean/images.py`. Brunner injects the submitted
