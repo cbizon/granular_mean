@@ -20,6 +20,8 @@ Continue until you accurately reproduce the Figure 1 snapshots in pattern
 and wavelength or conclude that you cannot. Decide for yourself how to validate
 against the paper.
 
+You have up to 48 hours of wall-clock time to complete this task.
+
 ## Available software and references
 
 The environment provides Python 3.12, `uv`, NumPy, SciPy, Numba, Matplotlib,

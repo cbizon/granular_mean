@@ -19,6 +19,7 @@ REQUIRED_ARRAYS = (
     "plate_vz",
     "collision_counts",
 )
+PHASE_GRID_TOLERANCE = 1e-6
 
 
 @dataclass(frozen=True)
@@ -63,6 +64,42 @@ def _require_real_finite(name: str, value: np.ndarray) -> None:
         )
     if not np.all(np.isfinite(value)):
         raise ValueError(f"{name} contains NaN or infinite values")
+
+
+def _circular_grid_error(
+    value: np.ndarray,
+    expected: np.ndarray,
+    *,
+    period: float,
+) -> float:
+    difference = ((value - expected + period / 2.0) % period) - period / 2.0
+    return float(np.max(np.abs(difference)))
+
+
+def _normalized_drive_phase(
+    value: np.ndarray,
+    frame_count: int,
+) -> np.ndarray:
+    expected = (
+        np.arange(frame_count, dtype=np.float64) % PHASES_PER_CYCLE
+    ) / PHASES_PER_CYCLE
+    if (
+        _circular_grid_error(value, expected, period=1.0)
+        <= PHASE_GRID_TOLERANCE
+    ):
+        return expected
+
+    radians = expected * (2.0 * np.pi)
+    if (
+        _circular_grid_error(value, radians, period=2.0 * np.pi)
+        <= PHASE_GRID_TOLERANCE * 2.0 * np.pi
+    ):
+        return expected
+
+    raise ValueError(
+        "drive_phase is not a phase-zero 32-bin cycle grid in normalized "
+        "cycle fractions or radians"
+    )
 
 
 def load_trajectory(
@@ -146,16 +183,10 @@ def load_trajectory(
     if np.any(np.diff(arrays["time"]) <= 0):
         raise ValueError("time must be strictly increasing")
 
-    expected_phase = (
-        np.arange(frame_count, dtype=np.float64) % PHASES_PER_CYCLE
-    ) / PHASES_PER_CYCLE
-    phase_error = np.abs(
-        ((arrays["drive_phase"] - expected_phase + 0.5) % 1.0) - 0.5
+    arrays["drive_phase"] = _normalized_drive_phase(
+        arrays["drive_phase"],
+        frame_count,
     )
-    if float(np.max(phase_error)) > 1e-6:
-        raise ValueError(
-            "drive_phase is not a phase-zero 32-bin cycle grid"
-        )
 
     collision_counts = arrays["collision_counts"]
     if np.any(collision_counts < 0):

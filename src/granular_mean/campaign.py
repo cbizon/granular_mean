@@ -1,59 +1,48 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 
 from brunner import (
     BenchmarkDefinition,
     CampaignPlan,
-    CampaignRunner,
     CampaignTrial,
+    ClusterCampaign,
+    ControllerProfile,
 )
-from brunner.backends import (
-    KubernetesBackend,
-    KubernetesProfile,
-)
+from brunner.backends import KubernetesProfile
 from brunner.contract import OutputContract
 
 from granular_mean.agent import (
-    CODEX_EFFORTS,
-    CODEX_MODEL,
+    CAMPAIGN_CLAUDE_MODEL,
+    CAMPAIGN_CODEX_MODELS,
+    CAMPAIGN_EFFORT,
+    azure_codex_settings,
     codex_environment_key,
 )
-from granular_mean.definition import (
-    DEFAULT_EVALUATOR_IMAGE,
+from granular_mean.images import (
+    DEFAULT_AGENT_IMAGE,
+    DEFAULT_CONTROLLER_IMAGE,
+    DEFAULT_SQUID_IMAGE,
+    RETIRED_AGENT_IMAGE,
+    RETIRED_AGENT_IMAGES,
+    RETIRED_CONTROLLER_IMAGES,
     RETIRED_EVALUATOR_IMAGE,
-    ROOT,
+    RETIRED_EVALUATOR_IMAGES,
+    is_unpublished_image,
 )
 
 
-CAMPAIGN_VARIANT = "sol-5-6-all-efforts-v2"
+CAMPAIGN_VARIANT = "luna-terra-sol-haiku-low-cluster-v1"
 CAMPAIGN_ID = f"granular-figure1-{CAMPAIGN_VARIANT}"
 DEFAULT_MAX_PARALLEL = 1
-RETIRED_AGENT_IMAGES = (
-    (
-        "ghcr.io/cbizon/granular-mean-agent@"
-        "sha256:8b785dc13f0c52ad53ddd59088b210c64327dd1dfedd38df4b5d952f76c99868"
-    ),
-    (
-        "ghcr.io/cbizon/granular-mean-agent@"
-        "sha256:487049af74c582eaf3af204af8d86a05fd57918ee6edfdae2409742c9699975d"
-    ),
-)
-RETIRED_AGENT_IMAGE = RETIRED_AGENT_IMAGES[0]
-DEFAULT_AGENT_IMAGE = (
-    "ghcr.io/cbizon/granular-mean-agent@"
-    "sha256:b2065cc9f29fea74ee7fb0200192b5e725e54921312be62e39f15e89dc40a6bd"
-)
-DEFAULT_STERLING_PROXY_IMAGE = (
-    "ubuntu/squid@"
-    "sha256:6a097f68bae708cedbabd6188d68c7e2e7a38cedd05a176e1cc0ba29e3bbe029"
-)
 DEFAULT_STERLING_NAMESPACE = "bizon"
 DEFAULT_STERLING_NETWORK_ISOLATION_MODE = "controlled-egress"
 DEFAULT_STERLING_STORAGE_SIZE = "20Gi"
+DEFAULT_STERLING_STORAGE_CLASS = "basic"
 DEFAULT_STERLING_REFERENCE_CLAIM = "granular-mean-reference-v1"
 DEFAULT_STERLING_CODEX_SECRET = "balls-bench-codex-azure"
+DEFAULT_STERLING_CLAUDE_SECRET = "balls-bench-claude-oauth"
+DEFAULT_STERLING_CLAUDE_SECRET_KEY = "CLAUDE_CODE_OAUTH_TOKEN"
 DEFAULT_STERLING_IMAGE_PULL_SECRET = "balls-bench-ghcr"
 DEFAULT_AGENT_CPU_REQUEST = "2"
 DEFAULT_AGENT_CPU_LIMIT = "8"
@@ -61,23 +50,55 @@ DEFAULT_AGENT_MEMORY_REQUEST = "8Gi"
 DEFAULT_AGENT_MEMORY_LIMIT = "32Gi"
 DEFAULT_AGENT_EPHEMERAL_STORAGE_REQUEST = "1Gi"
 DEFAULT_AGENT_EPHEMERAL_STORAGE_LIMIT = "3Gi"
+DEFAULT_CONTROLLER_CONTROL_STORAGE_SIZE = "20Gi"
+DEFAULT_CONTROLLER_RESULTS_STORAGE_SIZE = "20Gi"
+DEFAULT_CONTROLLER_CPU_REQUEST = "500m"
+DEFAULT_CONTROLLER_CPU_LIMIT = "2"
+DEFAULT_CONTROLLER_MEMORY_REQUEST = "1Gi"
+DEFAULT_CONTROLLER_MEMORY_LIMIT = "4Gi"
+DEFAULT_PREPARATION_CPU_REQUEST = "1"
+DEFAULT_PREPARATION_CPU_LIMIT = "4"
+DEFAULT_PREPARATION_MEMORY_REQUEST = "2Gi"
+DEFAULT_PREPARATION_MEMORY_LIMIT = "8Gi"
+DEFAULT_ASSESSMENT_CPU_REQUEST = "1"
+DEFAULT_ASSESSMENT_CPU_LIMIT = "4"
+DEFAULT_ASSESSMENT_MEMORY_REQUEST = "2Gi"
+DEFAULT_ASSESSMENT_MEMORY_LIMIT = "8Gi"
 DEFAULT_STERLING_ARTIFACT_CHUNK_BYTES = 1024 * 1024
 DEFAULT_STERLING_ARTIFACT_CHUNK_ATTEMPTS = 10
 DEFAULT_STERLING_COMMAND_TIMEOUT_SECONDS = 10 * 60
+DEFAULT_STERLING_STAGING_TIMEOUT_SECONDS = 30 * 60
+DEFAULT_STERLING_READER_TIMEOUT_SECONDS = 30 * 60
+DEFAULT_CONTROLLER_PREPARATION_TIMEOUT_SECONDS = 30 * 60
+DEFAULT_CONTROLLER_MAX_PUBLISHED_TRIAL_BYTES = 1024 * 1024 * 1024
 NESTED_SANDBOX_BYPASS_ENVIRONMENT = (
     "GRANULAR_MEAN_CODEX_BYPASS_NESTED_SANDBOX"
 )
 
 
 def build_campaign_trials() -> tuple[CampaignTrial, ...]:
-    return tuple(
+    codex_trials = tuple(
         CampaignTrial(
-            test_id=f"codex-gpt-5-6-sol-{effort}-r01",
+            test_id=f"codex-{model.replace('.', '-')}-low-r01",
             provider="codex",
-            model=CODEX_MODEL,
-            effort=effort,
+            model=model,
+            effort=CAMPAIGN_EFFORT,
+            provider_id=settings.provider_id,
+            provider_name=settings.provider_name,
+            base_url=settings.base_url,
+            environment_key=settings.environment_key,
         )
-        for effort in CODEX_EFFORTS
+        for model in CAMPAIGN_CODEX_MODELS
+        for settings in (azure_codex_settings(model, CAMPAIGN_EFFORT),)
+    )
+    return (
+        *codex_trials,
+        CampaignTrial(
+            test_id="claude-haiku-4-5-low-r01",
+            provider="claude",
+            model=CAMPAIGN_CLAUDE_MODEL,
+            effort=CAMPAIGN_EFFORT,
+        ),
     )
 
 
@@ -99,116 +120,121 @@ def _resource_environment(name: str, default: str) -> str:
     return value
 
 
-def _optional_environment(name: str) -> str | None:
-    value = os.environ.get(name)
+def _optional_environment(
+    name: str,
+    default: str | None = None,
+) -> str | None:
+    value = os.environ.get(name, default)
     return value.strip() if value and value.strip() else None
 
 
-def _sterling_profile(
-    *,
-    agent_image: str | None,
-    artifact_reader_image: str,
-    max_parallel: int,
-) -> KubernetesProfile:
-    pull_secret = _resource_environment(
-        "GRANULAR_MEAN_STERLING_IMAGE_PULL_SECRET",
-        DEFAULT_STERLING_IMAGE_PULL_SECRET,
-    )
-    return KubernetesProfile(
-        namespace=_resource_environment(
-            "GRANULAR_MEAN_STERLING_NAMESPACE",
-            DEFAULT_STERLING_NAMESPACE,
-        ),
-        network_isolation_mode=_resource_environment(
-            "GRANULAR_MEAN_STERLING_NETWORK_ISOLATION_MODE",
-            DEFAULT_STERLING_NETWORK_ISOLATION_MODE,
-        ),
-        agent_image=agent_image,
-        artifact_reader_image=artifact_reader_image,
-        reference_claim_name=os.environ.get(
-            "GRANULAR_MEAN_STERLING_REFERENCE_CLAIM",
-            DEFAULT_STERLING_REFERENCE_CLAIM,
-        ),
-        storage_size=os.environ.get(
-            "GRANULAR_MEAN_STERLING_STORAGE_SIZE",
-            DEFAULT_STERLING_STORAGE_SIZE,
-        ),
-        storage_class_name=_optional_environment(
-            "GRANULAR_MEAN_STERLING_STORAGE_CLASS"
-        ),
-        service_account_name=_optional_environment(
-            "GRANULAR_MEAN_STERLING_SERVICE_ACCOUNT"
-        ),
-        image_pull_secrets=(pull_secret,),
-        nonsecret_environment={
-            NESTED_SANDBOX_BYPASS_ENVIRONMENT: "true",
+def _published_image(name: str, default: str) -> str:
+    image = _resource_environment(name, default)
+    if is_unpublished_image(image):
+        raise RuntimeError(
+            f"{name} still uses the unpublished placeholder; build and "
+            "publish the image, then configure its immutable digest"
+        )
+    return image
+
+
+def _provider_secret_mapping(
+    environment_key: str,
+) -> dict[str, dict[str, tuple[str, str]]]:
+    return {
+        "codex": {
+            environment_key: (
+                _resource_environment(
+                    "GRANULAR_MEAN_STERLING_CODEX_SECRET",
+                    DEFAULT_STERLING_CODEX_SECRET,
+                ),
+                _resource_environment(
+                    "GRANULAR_MEAN_STERLING_CODEX_SECRET_KEY",
+                    environment_key,
+                ),
+            )
         },
-        proxy_image=os.environ.get(
-            "GRANULAR_MEAN_STERLING_PROXY_IMAGE",
-            DEFAULT_STERLING_PROXY_IMAGE,
-        ),
-        max_parallel=max_parallel,
-        command_timeout_seconds=_positive_integer_environment(
-            "GRANULAR_MEAN_STERLING_COMMAND_TIMEOUT_SECONDS",
-            DEFAULT_STERLING_COMMAND_TIMEOUT_SECONDS,
-        ),
-        artifact_chunk_bytes=_positive_integer_environment(
-            "GRANULAR_MEAN_STERLING_ARTIFACT_CHUNK_BYTES",
-            DEFAULT_STERLING_ARTIFACT_CHUNK_BYTES,
-        ),
-        artifact_chunk_attempts=_positive_integer_environment(
-            "GRANULAR_MEAN_STERLING_ARTIFACT_CHUNK_ATTEMPTS",
-            DEFAULT_STERLING_ARTIFACT_CHUNK_ATTEMPTS,
-        ),
-    )
+        "claude": {
+            DEFAULT_STERLING_CLAUDE_SECRET_KEY: (
+                _resource_environment(
+                    "GRANULAR_MEAN_STERLING_CLAUDE_SECRET",
+                    DEFAULT_STERLING_CLAUDE_SECRET,
+                ),
+                _resource_environment(
+                    "GRANULAR_MEAN_STERLING_CLAUDE_SECRET_KEY",
+                    DEFAULT_STERLING_CLAUDE_SECRET_KEY,
+                ),
+            )
+        }
+    }
+
+
+def _reviewer_secret_mapping(
+    environment_key: str,
+) -> dict[str, dict[str, tuple[str, str]]]:
+    return {
+        "codex": _provider_secret_mapping(environment_key)["codex"],
+    }
 
 
 def build_campaign(
     definition: BenchmarkDefinition,
     contract: OutputContract,
-) -> CampaignRunner:
+) -> ClusterCampaign:
+    del contract
     if definition.qualitative_review is None:
         raise RuntimeError(
             "granular campaigns require qualitative review; use "
             "granular_mean.definition:build_reviewed_definition"
         )
-    root = Path(
-        os.environ.get(
-            "GRANULAR_MEAN_CAMPAIGN_ROOT",
-            str(ROOT / "campaign-runs" / CAMPAIGN_VARIANT),
-        )
-    ).expanduser().resolve()
+
     max_parallel = _positive_integer_environment(
         "GRANULAR_MEAN_MAX_PARALLEL",
         DEFAULT_MAX_PARALLEL,
     )
-    agent_image = (
-        _optional_environment("GRANULAR_MEAN_AGENT_IMAGE")
-        or DEFAULT_AGENT_IMAGE
+    agent_image = _published_image(
+        "GRANULAR_MEAN_AGENT_IMAGE",
+        DEFAULT_AGENT_IMAGE,
+    )
+    controller_image = _published_image(
+        "GRANULAR_MEAN_CONTROLLER_IMAGE",
+        DEFAULT_CONTROLLER_IMAGE,
     )
     evaluator_image = definition.evaluation.image
+    if evaluator_image is None or is_unpublished_image(evaluator_image):
+        raise RuntimeError(
+            "GRANULAR_MEAN_EVALUATOR_IMAGE still uses the unpublished "
+            "placeholder; configure the immutable controller/evaluator digest"
+        )
     if (
         agent_image in RETIRED_AGENT_IMAGES
-        or evaluator_image == RETIRED_EVALUATOR_IMAGE
+        or controller_image in RETIRED_CONTROLLER_IMAGES
+        or evaluator_image
+        in (*RETIRED_EVALUATOR_IMAGES, *RETIRED_CONTROLLER_IMAGES)
     ):
         raise RuntimeError(
-            "campaign images predate the restored benchmark isolation "
-            "invariants; rebuild both images and configure their immutable "
-            "digests before launching"
+            "campaign images predate the cluster-resident controller "
+            "protocol; rebuild both images from the current Brunner revision"
         )
+
     environment_key = codex_environment_key()
+    provider_secret_mapping = _provider_secret_mapping(environment_key)
+    namespace = _resource_environment(
+        "GRANULAR_MEAN_STERLING_NAMESPACE",
+        DEFAULT_STERLING_NAMESPACE,
+    )
+    pull_secret = _resource_environment(
+        "GRANULAR_MEAN_STERLING_IMAGE_PULL_SECRET",
+        DEFAULT_STERLING_IMAGE_PULL_SECRET,
+    )
+    storage_class = _optional_environment(
+        "GRANULAR_MEAN_STERLING_STORAGE_CLASS",
+        DEFAULT_STERLING_STORAGE_CLASS,
+    )
     plan = CampaignPlan(
         campaign_id=CAMPAIGN_ID,
-        root=root,
         trials=build_campaign_trials(),
         max_parallel=max_parallel,
-        collection_retry_seconds=60,
-        collection_max_attempts=5,
-        max_pause_seconds=24 * 60 * 60,
-        provider_executable=os.environ.get(
-            "GRANULAR_MEAN_CODEX_EXECUTABLE",
-            "granular-mean-codex",
-        ),
         backend_image=agent_image,
         cpu_request=_resource_environment(
             "GRANULAR_MEAN_AGENT_CPU_REQUEST",
@@ -234,35 +260,147 @@ def build_campaign(
             "GRANULAR_MEAN_AGENT_EPHEMERAL_STORAGE_LIMIT",
             DEFAULT_AGENT_EPHEMERAL_STORAGE_LIMIT,
         ),
-        provider_secret_environment={
-            "codex": {
-                environment_key: (
-                    os.environ.get(
-                        "GRANULAR_MEAN_STERLING_CODEX_SECRET",
-                        DEFAULT_STERLING_CODEX_SECRET,
-                    ),
-                    os.environ.get(
-                        "GRANULAR_MEAN_STERLING_CODEX_SECRET_KEY",
-                        environment_key,
-                    ),
-                )
-            }
-        },
+        provider_secret_environment=provider_secret_mapping,
+        submission_retry_seconds=60,
+        submission_max_attempts=5,
+        collection_retry_seconds=60,
+        collection_max_attempts=5,
+        cleanup_retry_seconds=60,
+        publication_retry_seconds=60,
+        publication_max_attempts=5,
+        infrastructure_max_restarts=5,
+        max_pause_seconds=None,
+        evaluation_timeout_seconds=definition.evaluation.timeout_seconds,
     )
-    profile = _sterling_profile(
-        agent_image=plan.backend_image,
-        artifact_reader_image=(
-            _optional_environment(
-                "GRANULAR_MEAN_STERLING_ARTIFACT_READER_IMAGE"
-            )
-            or definition.evaluation.image
-            or DEFAULT_EVALUATOR_IMAGE
+    backend = KubernetesProfile(
+        namespace=namespace,
+        network_isolation_mode=_resource_environment(
+            "GRANULAR_MEAN_STERLING_NETWORK_ISOLATION_MODE",
+            DEFAULT_STERLING_NETWORK_ISOLATION_MODE,
+        ),
+        agent_image=agent_image,
+        artifact_reader_image=controller_image,
+        reference_claim_name=_resource_environment(
+            "GRANULAR_MEAN_STERLING_REFERENCE_CLAIM",
+            DEFAULT_STERLING_REFERENCE_CLAIM,
+        ),
+        storage_size=_resource_environment(
+            "GRANULAR_MEAN_STERLING_STORAGE_SIZE",
+            DEFAULT_STERLING_STORAGE_SIZE,
+        ),
+        storage_class_name=storage_class,
+        image_pull_secrets=(pull_secret,),
+        nonsecret_environment={
+            NESTED_SANDBOX_BYPASS_ENVIRONMENT: "true",
+        },
+        proxy_image=_resource_environment(
+            "GRANULAR_MEAN_STERLING_PROXY_IMAGE",
+            DEFAULT_SQUID_IMAGE,
         ),
         max_parallel=max_parallel,
+        staging_timeout_seconds=_positive_integer_environment(
+            "GRANULAR_MEAN_STERLING_STAGING_TIMEOUT_SECONDS",
+            DEFAULT_STERLING_STAGING_TIMEOUT_SECONDS,
+        ),
+        reader_timeout_seconds=_positive_integer_environment(
+            "GRANULAR_MEAN_STERLING_READER_TIMEOUT_SECONDS",
+            DEFAULT_STERLING_READER_TIMEOUT_SECONDS,
+        ),
+        command_timeout_seconds=_positive_integer_environment(
+            "GRANULAR_MEAN_STERLING_COMMAND_TIMEOUT_SECONDS",
+            DEFAULT_STERLING_COMMAND_TIMEOUT_SECONDS,
+        ),
+        artifact_chunk_bytes=_positive_integer_environment(
+            "GRANULAR_MEAN_STERLING_ARTIFACT_CHUNK_BYTES",
+            DEFAULT_STERLING_ARTIFACT_CHUNK_BYTES,
+        ),
+        artifact_chunk_attempts=_positive_integer_environment(
+            "GRANULAR_MEAN_STERLING_ARTIFACT_CHUNK_ATTEMPTS",
+            DEFAULT_STERLING_ARTIFACT_CHUNK_ATTEMPTS,
+        ),
     )
-    return CampaignRunner(
-        definition,
-        contract,
-        plan,
-        KubernetesBackend(profile),
+    controller = ControllerProfile(
+        namespace=namespace,
+        image=controller_image,
+        control_storage_size=_resource_environment(
+            "GRANULAR_MEAN_CONTROLLER_CONTROL_STORAGE_SIZE",
+            DEFAULT_CONTROLLER_CONTROL_STORAGE_SIZE,
+        ),
+        results_storage_size=_resource_environment(
+            "GRANULAR_MEAN_CONTROLLER_RESULTS_STORAGE_SIZE",
+            DEFAULT_CONTROLLER_RESULTS_STORAGE_SIZE,
+        ),
+        storage_class_name=storage_class,
+        image_pull_secrets=(pull_secret,),
+        poll_seconds=5,
+        preparation_timeout_seconds=_positive_integer_environment(
+            "GRANULAR_MEAN_CONTROLLER_PREPARATION_TIMEOUT_SECONDS",
+            DEFAULT_CONTROLLER_PREPARATION_TIMEOUT_SECONDS,
+        ),
+        command_timeout_seconds=_positive_integer_environment(
+            "GRANULAR_MEAN_STERLING_COMMAND_TIMEOUT_SECONDS",
+            DEFAULT_STERLING_COMMAND_TIMEOUT_SECONDS,
+        ),
+        max_published_trial_bytes=_positive_integer_environment(
+            "GRANULAR_MEAN_CONTROLLER_MAX_PUBLISHED_TRIAL_BYTES",
+            DEFAULT_CONTROLLER_MAX_PUBLISHED_TRIAL_BYTES,
+        ),
+        controller_cpu_request=_resource_environment(
+            "GRANULAR_MEAN_CONTROLLER_CPU_REQUEST",
+            DEFAULT_CONTROLLER_CPU_REQUEST,
+        ),
+        controller_cpu_limit=_resource_environment(
+            "GRANULAR_MEAN_CONTROLLER_CPU_LIMIT",
+            DEFAULT_CONTROLLER_CPU_LIMIT,
+        ),
+        controller_memory_request=_resource_environment(
+            "GRANULAR_MEAN_CONTROLLER_MEMORY_REQUEST",
+            DEFAULT_CONTROLLER_MEMORY_REQUEST,
+        ),
+        controller_memory_limit=_resource_environment(
+            "GRANULAR_MEAN_CONTROLLER_MEMORY_LIMIT",
+            DEFAULT_CONTROLLER_MEMORY_LIMIT,
+        ),
+        preparation_cpu_request=_resource_environment(
+            "GRANULAR_MEAN_PREPARATION_CPU_REQUEST",
+            DEFAULT_PREPARATION_CPU_REQUEST,
+        ),
+        preparation_cpu_limit=_resource_environment(
+            "GRANULAR_MEAN_PREPARATION_CPU_LIMIT",
+            DEFAULT_PREPARATION_CPU_LIMIT,
+        ),
+        preparation_memory_request=_resource_environment(
+            "GRANULAR_MEAN_PREPARATION_MEMORY_REQUEST",
+            DEFAULT_PREPARATION_MEMORY_REQUEST,
+        ),
+        preparation_memory_limit=_resource_environment(
+            "GRANULAR_MEAN_PREPARATION_MEMORY_LIMIT",
+            DEFAULT_PREPARATION_MEMORY_LIMIT,
+        ),
+        assessment_cpu_request=_resource_environment(
+            "GRANULAR_MEAN_ASSESSMENT_CPU_REQUEST",
+            DEFAULT_ASSESSMENT_CPU_REQUEST,
+        ),
+        assessment_cpu_limit=_resource_environment(
+            "GRANULAR_MEAN_ASSESSMENT_CPU_LIMIT",
+            DEFAULT_ASSESSMENT_CPU_LIMIT,
+        ),
+        assessment_memory_request=_resource_environment(
+            "GRANULAR_MEAN_ASSESSMENT_MEMORY_REQUEST",
+            DEFAULT_ASSESSMENT_MEMORY_REQUEST,
+        ),
+        assessment_memory_limit=_resource_environment(
+            "GRANULAR_MEAN_ASSESSMENT_MEMORY_LIMIT",
+            DEFAULT_ASSESSMENT_MEMORY_LIMIT,
+        ),
+        reviewer_secret_environment=_reviewer_secret_mapping(
+            environment_key
+        ),
     )
+    campaign = ClusterCampaign(
+        plan=plan,
+        backend=backend,
+        controller=controller,
+    )
+    campaign.validate()
+    return campaign

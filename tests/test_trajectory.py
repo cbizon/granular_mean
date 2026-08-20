@@ -19,6 +19,23 @@ def test_loads_valid_normalized_trajectory(trajectory_factory) -> None:
     assert trajectory.cycle_count == 4
 
 
+def test_loads_radian_drive_phase_as_normalized_cycle_fraction(
+    tmp_path,
+    trajectory_factory,
+) -> None:
+    source = trajectory_factory("a")
+    with np.load(source, allow_pickle=False) as archive:
+        arrays = {name: archive[name] for name in archive.files}
+    arrays["drive_phase"] = arrays["drive_phase"] * (2.0 * np.pi)
+    radians = tmp_path / "radians.npz"
+    np.savez(radians, **arrays)
+
+    trajectory = load_trajectory(radians, CASES["a"], expected_particles=4)
+
+    expected = (np.arange(trajectory.frame_count) % 32) / 32
+    np.testing.assert_array_equal(trajectory.drive_phase, expected)
+
+
 def test_rejects_unexpected_arrays(
     tmp_path,
     trajectory_factory,

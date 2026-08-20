@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import sys
 
 from brunner.agent_cli import main as brunner_agent_main
 from brunner.providers import ProviderSettings
@@ -9,7 +8,14 @@ from brunner.trial import TrialIdentity, load_trial_identity
 
 
 CODEX_MODEL = "gpt-5.6-sol"
-CODEX_EFFORTS = ("low", "medium", "high", "xhigh", "max", "ultra")
+CAMPAIGN_CODEX_MODELS = (
+    "gpt-5.6-luna",
+    "gpt-5.6-terra",
+    CODEX_MODEL,
+)
+CAMPAIGN_CLAUDE_MODEL = "claude-haiku-4-5"
+CAMPAIGN_EFFORT = "low"
+CAMPAIGN_EFFORTS = (CAMPAIGN_EFFORT,)
 DEFAULT_CODEX_PROVIDER_ID = "azure"
 DEFAULT_CODEX_PROVIDER_NAME = "Azure OpenAI"
 DEFAULT_CODEX_BASE_URL = (
@@ -53,39 +59,45 @@ def azure_codex_settings(
 
 
 def provider_settings(identity: TrialIdentity) -> ProviderSettings:
-    if identity.provider != "codex":
+    if identity.effort != CAMPAIGN_EFFORT:
         raise ValueError(
-            f"granular campaign requires provider 'codex', got "
-            f"{identity.provider!r}"
-        )
-    if identity.model != CODEX_MODEL:
-        raise ValueError(
-            f"granular campaign requires model {CODEX_MODEL!r}, got "
-            f"{identity.model!r}"
-        )
-    if identity.effort not in CODEX_EFFORTS:
-        raise ValueError(
-            f"{CODEX_MODEL} effort must be one of {CODEX_EFFORTS}, got "
+            f"granular campaign effort must be {CAMPAIGN_EFFORT!r}, got "
             f"{identity.effort!r}"
         )
-    return azure_codex_settings(
-        identity.model,
-        identity.effort,
-        allowed_efforts=CODEX_EFFORTS,
+    if identity.provider == "codex":
+        if identity.model not in CAMPAIGN_CODEX_MODELS:
+            raise ValueError(
+                "granular Codex campaign model must be one of "
+                f"{CAMPAIGN_CODEX_MODELS}, got {identity.model!r}"
+            )
+        return azure_codex_settings(
+            identity.model,
+            identity.effort,
+            allowed_efforts=CAMPAIGN_EFFORTS,
+        )
+    if (
+        identity.provider == "claude"
+        and identity.model == CAMPAIGN_CLAUDE_MODEL
+    ):
+        return ProviderSettings(
+            provider=identity.provider,
+            model=identity.model,
+            effort=identity.effort,
+            allowed_efforts=CAMPAIGN_EFFORTS,
+        )
+    if identity.provider == "claude":
+        raise ValueError(
+            f"granular Claude campaign requires model "
+            f"{CAMPAIGN_CLAUDE_MODEL!r}, got "
+            f"{identity.model!r}"
+        )
+    raise ValueError(
+        "granular campaign provider must be 'codex' or 'claude', got "
+        f"{identity.provider!r}"
     )
 
 
 def main() -> int:
-    if "--provider-executable" not in sys.argv:
-        sys.argv.extend(
-            (
-                "--provider-executable",
-                os.environ.get(
-                    "GRANULAR_MEAN_CODEX_EXECUTABLE",
-                    "granular-mean-codex",
-                ),
-            )
-        )
     brunner_agent_main()
     return 0
 

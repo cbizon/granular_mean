@@ -21,7 +21,7 @@ spec:
     - name: balls-bench-ghcr
   containers:
     - name: upload
-      image: ghcr.io/cbizon/granular-mean-evaluator@sha256:77c4742436b703526c779565f8dc749156cc48cf661363241e93d24f8fad1b2d
+      image: ghcr.io/cbizon/granular-mean-controller@sha256:d77903f27b14f83205ff0a8fb3142c943e1b25ad6c96ea04e365e5ea10b23fe1
       command:
         - /bin/sh
         - -c

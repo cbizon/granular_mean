@@ -6,8 +6,6 @@
 *.pyc
 .coverage
 campaign-runs
-challenge
 dist
-reference
-resources
+reference/generated
 tests

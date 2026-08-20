@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any
+from zipfile import BadZipFile
 
 import numpy as np
 
@@ -21,6 +22,17 @@ from granular_mean.metrics import (
 from granular_mean.overlaps import overlap_profiles
 from granular_mean.report import representative_images
 from granular_mean.trajectory import last_cycles
+
+
+CANDIDATE_DATA_ERRORS = (
+    BadZipFile,
+    EOFError,
+    IndexError,
+    KeyError,
+    OSError,
+    TypeError,
+    ValueError,
+)
 
 
 def jsonable(value: Any) -> Any:
@@ -188,6 +200,7 @@ def _case_evaluation(
     reference_collisions = collision_rates(reference)
     candidate_collisions = collision_rates(candidate)
     result: dict[str, object] = {
+        "status": "complete",
         "simulation": {
             "cycle": candidate_case.simulation_cycle,
             "walltime_seconds": candidate_case.walltime_seconds,
@@ -325,17 +338,43 @@ def evaluate_collections(
     case_results = {}
     report_images = {}
     for case_id in reference.cases:
-        case_result, case_images = _case_evaluation(
-            reference.cases[case_id],
-            candidate.cases[case_id],
-            include_overlaps=include_overlaps,
-            paper=paper,
-        )
+        try:
+            case_result, case_images = _case_evaluation(
+                reference.cases[case_id],
+                candidate.cases[case_id],
+                include_overlaps=include_overlaps,
+                paper=paper,
+            )
+        except CANDIDATE_DATA_ERRORS as error:
+            candidate_case = candidate.cases[case_id]
+            case_result = {
+                "status": "failed",
+                "simulation": {
+                    "cycle": candidate_case.simulation_cycle,
+                    "walltime_seconds": candidate_case.walltime_seconds,
+                    "candidate_particle_count": candidate_case.particle_count,
+                    "expected_candidate_export_cycles": (
+                        candidate_case.case.export_cycles
+                    ),
+                    "export_cycle_count_matches": False,
+                },
+                "error": {
+                    "type": type(error).__name__,
+                    "message": str(error),
+                },
+            }
+            case_images = []
         case_results[case_id] = case_result
         report_images[case_id] = case_images
 
+    failed_cases = sorted(
+        case_id
+        for case_id, case in case_results.items()
+        if case["status"] == "failed"
+    )
     contract_complete = all(
-        case["simulation"]["export_cycle_count_matches"]
+        case["status"] == "complete"
+        and case["simulation"]["export_cycle_count_matches"]
         for case in case_results.values()
     )
     details = {
@@ -343,6 +382,7 @@ def evaluate_collections(
         "contract_completion": {
             "complete": contract_complete,
             "cases": sorted(candidate.cases),
+            "failed_cases": failed_cases,
         },
         "include_overlaps": include_overlaps,
         "cases": case_results,
@@ -352,10 +392,13 @@ def evaluate_collections(
 
 def mean_pattern_normalized_rmse(
     details: dict[str, Any],
-) -> float:
+) -> float | None:
     errors = [
         metric["normalized_rmse"]
         for case in details["cases"].values()
+        if case["status"] == "complete"
         for metric in case["updated_c_fidelity"]["errors"].values()
     ]
+    if not errors:
+        return None
     return float(np.mean(errors))
