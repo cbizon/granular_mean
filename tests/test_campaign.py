@@ -132,17 +132,18 @@ def test_campaign_runs_selected_models_at_low_effort() -> None:
     trials = build_campaign_trials()
 
     assert tuple(trial.model for trial in trials) == (
-        *CAMPAIGN_CODEX_MODELS,
         CAMPAIGN_CLAUDE_MODEL,
+        *CAMPAIGN_CODEX_MODELS,
     )
     assert {trial.effort for trial in trials} == {CAMPAIGN_EFFORT}
     assert tuple(trial.provider for trial in trials) == (
-        "codex",
-        "codex",
-        "codex",
         "claude",
+        "codex",
+        "codex",
+        "codex",
     )
-    codex_trials = trials[:3]
+    assert trials[0].provider_id is None
+    codex_trials = trials[1:]
     assert {trial.provider_id for trial in codex_trials} == {"azure"}
     assert {trial.base_url for trial in codex_trials} == {
         DEFAULT_CODEX_BASE_URL
@@ -150,7 +151,6 @@ def test_campaign_runs_selected_models_at_low_effort() -> None:
     assert {trial.environment_key for trial in codex_trials} == {
         "AZURE_OPENAI_API_KEY"
     }
-    assert trials[3].provider_id is None
     assert len({trial.test_id for trial in trials}) == 4
 
 
@@ -278,7 +278,9 @@ def test_campaign_workload_uses_containerized_azure_launcher(
 ) -> None:
     campaign = _campaign(monkeypatch)
     definition = build_reviewed_definition()
-    campaign_trial = campaign.plan.trials[0]
+    campaign_trial = next(
+        trial for trial in campaign.plan.trials if trial.provider == "codex"
+    )
     trial = tmp_path / campaign_trial.test_id
 
     workload = default_workload_factory(
@@ -379,7 +381,9 @@ def test_haiku_workload_uses_claude_and_only_its_secret(
 ) -> None:
     campaign = _campaign(monkeypatch)
     definition = build_reviewed_definition()
-    campaign_trial = campaign.plan.trials[-1]
+    campaign_trial = next(
+        trial for trial in campaign.plan.trials if trial.provider == "claude"
+    )
 
     workload = default_workload_factory(
         tmp_path / campaign_trial.test_id,
