@@ -13,7 +13,7 @@ from brunner.backends import KubernetesProfile
 from brunner.contract import OutputContract
 
 from granular_mean.agent import (
-    CAMPAIGN_CLAUDE_MODEL,
+    CAMPAIGN_CLAUDE_MODELS,
     CAMPAIGN_CODEX_MODELS,
     CAMPAIGN_EFFORT,
     azure_codex_settings,
@@ -22,6 +22,7 @@ from granular_mean.agent import (
 from granular_mean.images import (
     DEFAULT_AGENT_IMAGE,
     DEFAULT_CONTROLLER_IMAGE,
+    DEFAULT_EVALUATOR_IMAGE,
     DEFAULT_SQUID_IMAGE,
     RETIRED_AGENT_IMAGE,
     RETIRED_AGENT_IMAGES,
@@ -77,6 +78,15 @@ NESTED_SANDBOX_BYPASS_ENVIRONMENT = (
 
 
 def build_campaign_trials() -> tuple[CampaignTrial, ...]:
+    claude_trials = tuple(
+        CampaignTrial(
+            test_id=f"{model}-low-r01",
+            provider="claude",
+            model=model,
+            effort=CAMPAIGN_EFFORT,
+        )
+        for model in CAMPAIGN_CLAUDE_MODELS
+    )
     codex_trials = tuple(
         CampaignTrial(
             test_id=f"codex-{model.replace('.', '-')}-low-r01",
@@ -92,13 +102,9 @@ def build_campaign_trials() -> tuple[CampaignTrial, ...]:
         for settings in (azure_codex_settings(model, CAMPAIGN_EFFORT),)
     )
     return (
-        CampaignTrial(
-            test_id="claude-haiku-4-5-low-r01",
-            provider="claude",
-            model=CAMPAIGN_CLAUDE_MODEL,
-            effort=CAMPAIGN_EFFORT,
-        ),
+        claude_trials[0],
         *codex_trials,
+        *claude_trials[1:],
     )
 
 
@@ -209,12 +215,16 @@ def build_campaign(
     if (
         agent_image in RETIRED_AGENT_IMAGES
         or controller_image in RETIRED_CONTROLLER_IMAGES
-        or evaluator_image
-        in (*RETIRED_EVALUATOR_IMAGES, *RETIRED_CONTROLLER_IMAGES)
+        or evaluator_image in RETIRED_EVALUATOR_IMAGES
+        or (
+            evaluator_image in RETIRED_CONTROLLER_IMAGES
+            and evaluator_image != DEFAULT_EVALUATOR_IMAGE
+        )
     ):
         raise RuntimeError(
             "campaign images predate the cluster-resident controller "
-            "protocol; rebuild both images from the current Brunner revision"
+            "protocol; rebuild the affected images from the current Brunner "
+            "revision"
         )
 
     environment_key = codex_environment_key()

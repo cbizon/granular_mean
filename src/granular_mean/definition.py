@@ -131,8 +131,7 @@ def build_definition() -> BenchmarkDefinition:
         artifacts=ArtifactPolicy(
             groups={
                 "raw-trajectories": (
-                    "workspace/submission/*.npz",
-                    "workspace/submission/**/*.npz",
+                    "**/*.npz",
                 ),
             },
             max_collection_bytes=1024 * 1024 * 1024,
