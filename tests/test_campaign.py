@@ -15,7 +15,7 @@ from brunner.trial import TrialIdentity
 
 from granular_mean import agent as agent_module
 from granular_mean.agent import (
-    CAMPAIGN_CLAUDE_MODEL,
+    CAMPAIGN_CLAUDE_MODELS,
     CAMPAIGN_CODEX_MODELS,
     CAMPAIGN_EFFORT,
     CAMPAIGN_EFFORTS,
@@ -84,6 +84,7 @@ from granular_mean.images import (
     DEFAULT_SQUID_IMAGE,
     RETIRED_AGENT_IMAGE,
     RETIRED_AGENT_IMAGES,
+    RETIRED_CONTROLLER_IMAGES,
     RETIRED_EVALUATOR_IMAGE,
     RETIRED_EVALUATOR_IMAGES,
     is_unpublished_image,
@@ -132,8 +133,9 @@ def test_campaign_runs_selected_models_at_low_effort() -> None:
     trials = build_campaign_trials()
 
     assert tuple(trial.model for trial in trials) == (
-        CAMPAIGN_CLAUDE_MODEL,
+        CAMPAIGN_CLAUDE_MODELS[0],
         *CAMPAIGN_CODEX_MODELS,
+        *CAMPAIGN_CLAUDE_MODELS[1:],
     )
     assert {trial.effort for trial in trials} == {CAMPAIGN_EFFORT}
     assert tuple(trial.provider for trial in trials) == (
@@ -141,9 +143,16 @@ def test_campaign_runs_selected_models_at_low_effort() -> None:
         "codex",
         "codex",
         "codex",
+        "claude",
+        "claude",
     )
-    assert trials[0].provider_id is None
-    codex_trials = trials[1:]
+    claude_trials = tuple(
+        trial for trial in trials if trial.provider == "claude"
+    )
+    assert {trial.provider_id for trial in claude_trials} == {None}
+    codex_trials = tuple(
+        trial for trial in trials if trial.provider == "codex"
+    )
     assert {trial.provider_id for trial in codex_trials} == {"azure"}
     assert {trial.base_url for trial in codex_trials} == {
         DEFAULT_CODEX_BASE_URL
@@ -151,7 +160,7 @@ def test_campaign_runs_selected_models_at_low_effort() -> None:
     assert {trial.environment_key for trial in codex_trials} == {
         "AZURE_OPENAI_API_KEY"
     }
-    assert len({trial.test_id for trial in trials}) == 4
+    assert len({trial.test_id for trial in trials}) == 6
 
 
 def test_remote_agent_delegates_to_brunner_protocol(
@@ -616,7 +625,8 @@ def test_images_pin_current_brunner_build() -> None:
     assert "reference" not in dockerignore
     assert not is_unpublished_image(DEFAULT_AGENT_IMAGE)
     assert not is_unpublished_image(DEFAULT_CONTROLLER_IMAGE)
-    assert DEFAULT_EVALUATOR_IMAGE == DEFAULT_CONTROLLER_IMAGE
+    assert DEFAULT_EVALUATOR_IMAGE != DEFAULT_CONTROLLER_IMAGE
+    assert DEFAULT_EVALUATOR_IMAGE in RETIRED_CONTROLLER_IMAGES
 
 
 def test_reference_upload_is_network_isolated() -> None:
@@ -672,13 +682,12 @@ def test_definition_requires_image_backed_sterling_evaluation() -> None:
     )
 
 
-def test_definition_excludes_raw_submission_trajectories() -> None:
+def test_definition_excludes_all_raw_trajectories() -> None:
     definition = build_definition()
 
     assert definition.artifacts.collect_evaluated_artifacts is False
     assert definition.artifacts.groups["raw-trajectories"] == (
-        "workspace/submission/*.npz",
-        "workspace/submission/**/*.npz",
+        "**/*.npz",
     )
     assert definition.artifacts.max_collection_bytes == 1024 * 1024 * 1024
 
@@ -709,12 +718,13 @@ def test_provider_settings_pin_codex_models_to_low_and_azure(
     assert settings.environment_key == "AZURE_OPENAI_API_KEY"
 
 
-def test_provider_settings_accept_haiku_at_low() -> None:
+@pytest.mark.parametrize("model", CAMPAIGN_CLAUDE_MODELS)
+def test_provider_settings_accept_claude_models_at_low(model: str) -> None:
     settings = provider_settings(
         TrialIdentity(
-            test_id="haiku-low",
+            test_id=f"{model}-low",
             provider="claude",
-            model=CAMPAIGN_CLAUDE_MODEL,
+            model=model,
             effort=CAMPAIGN_EFFORT,
         )
     )

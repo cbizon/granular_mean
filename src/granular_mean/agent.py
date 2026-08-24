@@ -13,7 +13,11 @@ CAMPAIGN_CODEX_MODELS = (
     "gpt-5.6-terra",
     CODEX_MODEL,
 )
-CAMPAIGN_CLAUDE_MODEL = "claude-haiku-4-5"
+CAMPAIGN_CLAUDE_MODELS = (
+    "claude-haiku-4-5",
+    "claude-opus-5",
+    "claude-sonnet-5",
+)
 CAMPAIGN_EFFORT = "low"
 CAMPAIGN_EFFORTS = (CAMPAIGN_EFFORT,)
 DEFAULT_CODEX_PROVIDER_ID = "azure"
@@ -77,7 +81,7 @@ def provider_settings(identity: TrialIdentity) -> ProviderSettings:
         )
     if (
         identity.provider == "claude"
-        and identity.model == CAMPAIGN_CLAUDE_MODEL
+        and identity.model in CAMPAIGN_CLAUDE_MODELS
     ):
         return ProviderSettings(
             provider=identity.provider,
@@ -87,8 +91,8 @@ def provider_settings(identity: TrialIdentity) -> ProviderSettings:
         )
     if identity.provider == "claude":
         raise ValueError(
-            f"granular Claude campaign requires model "
-            f"{CAMPAIGN_CLAUDE_MODEL!r}, got "
+            "granular Claude campaign model must be one of "
+            f"{CAMPAIGN_CLAUDE_MODELS}, got "
             f"{identity.model!r}"
         )
     raise ValueError(

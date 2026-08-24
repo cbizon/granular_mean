@@ -9,9 +9,12 @@ DEFAULT_AGENT_IMAGE = (
 )
 DEFAULT_CONTROLLER_IMAGE = (
     "ghcr.io/cbizon/granular-mean-controller@sha256:"
+    "704060b123607eb323abd15dd685167f818a651ced102940f29486b07b7084e9"
+)
+DEFAULT_EVALUATOR_IMAGE = (
+    "ghcr.io/cbizon/granular-mean-controller@sha256:"
     "0795d16f7952c03b00ccaf98447b6cdb1aed31e3bf1423c73d90fdf7e0f659f0"
 )
-DEFAULT_EVALUATOR_IMAGE = DEFAULT_CONTROLLER_IMAGE
 DEFAULT_SQUID_IMAGE = (
     "ubuntu/squid@sha256:"
     "6a097f68bae708cedbabd6188d68c7e2e7a38cedd05a176e1cc0ba29e3bbe029"
@@ -51,6 +54,10 @@ RETIRED_AGENT_IMAGES = (
 )
 RETIRED_AGENT_IMAGE = RETIRED_AGENT_IMAGES[0]
 RETIRED_CONTROLLER_IMAGES = (
+    (
+        "ghcr.io/cbizon/granular-mean-controller@sha256:"
+        "0795d16f7952c03b00ccaf98447b6cdb1aed31e3bf1423c73d90fdf7e0f659f0"
+    ),
     (
         "ghcr.io/cbizon/granular-mean-controller@sha256:"
         "d77903f27b14f83205ff0a8fb3142c943e1b25ad6c96ea04e365e5ea10b23fe1"
