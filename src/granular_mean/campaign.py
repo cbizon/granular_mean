@@ -21,6 +21,7 @@ from granular_mean.agent import (
 )
 from granular_mean.images import (
     DEFAULT_AGENT_IMAGE,
+    DEFAULT_ARTIFACT_READER_IMAGE,
     DEFAULT_CONTROLLER_IMAGE,
     DEFAULT_EVALUATOR_IMAGE,
     DEFAULT_SQUID_IMAGE,
@@ -206,6 +207,10 @@ def build_campaign(
         "GRANULAR_MEAN_CONTROLLER_IMAGE",
         DEFAULT_CONTROLLER_IMAGE,
     )
+    artifact_reader_image = _published_image(
+        "GRANULAR_MEAN_ARTIFACT_READER_IMAGE",
+        DEFAULT_ARTIFACT_READER_IMAGE,
+    )
     evaluator_image = definition.evaluation.image
     if evaluator_image is None or is_unpublished_image(evaluator_image):
         raise RuntimeError(
@@ -289,7 +294,7 @@ def build_campaign(
             DEFAULT_STERLING_NETWORK_ISOLATION_MODE,
         ),
         agent_image=agent_image,
-        artifact_reader_image=controller_image,
+        artifact_reader_image=artifact_reader_image,
         reference_claim_name=_resource_environment(
             "GRANULAR_MEAN_STERLING_REFERENCE_CLAIM",
             DEFAULT_STERLING_REFERENCE_CLAIM,
