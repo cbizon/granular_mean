@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -78,6 +80,7 @@ from granular_mean.definition import (
 )
 from granular_mean.images import (
     DEFAULT_AGENT_IMAGE,
+    DEFAULT_ARTIFACT_READER_IMAGE,
     DEFAULT_CONTROLLER_IMAGE,
     DEFAULT_EVALUATOR_IMAGE,
     DEFAULT_REFERENCE_UPLOAD_IMAGE,
@@ -108,6 +111,10 @@ AZURE_CODEX_ARGUMENTS = [
 ]
 TEST_AGENT_IMAGE = "ghcr.io/example/agent@sha256:" + "a" * 64
 TEST_CONTROLLER_IMAGE = "ghcr.io/example/controller@sha256:" + "b" * 64
+TEST_ARTIFACT_READER_IMAGE = (
+    "ghcr.io/example/artifact-reader@sha256:" + "c" * 64
+)
+TEST_EVALUATOR_IMAGE = "ghcr.io/example/evaluator@sha256:" + "d" * 64
 
 
 def _set_published_images(monkeypatch) -> None:
@@ -117,8 +124,12 @@ def _set_published_images(monkeypatch) -> None:
         TEST_CONTROLLER_IMAGE,
     )
     monkeypatch.setenv(
+        "GRANULAR_MEAN_ARTIFACT_READER_IMAGE",
+        TEST_ARTIFACT_READER_IMAGE,
+    )
+    monkeypatch.setenv(
         "GRANULAR_MEAN_EVALUATOR_IMAGE",
-        TEST_CONTROLLER_IMAGE,
+        TEST_EVALUATOR_IMAGE,
     )
 
 
@@ -145,6 +156,7 @@ def test_campaign_runs_selected_models_at_low_effort() -> None:
         "codex",
         "claude",
         "claude",
+        "claude",
     )
     claude_trials = tuple(
         trial for trial in trials if trial.provider == "claude"
@@ -160,7 +172,7 @@ def test_campaign_runs_selected_models_at_low_effort() -> None:
     assert {trial.environment_key for trial in codex_trials} == {
         "AZURE_OPENAI_API_KEY"
     }
-    assert len({trial.test_id for trial in trials}) == 6
+    assert len({trial.test_id for trial in trials}) == 7
 
 
 def test_remote_agent_delegates_to_brunner_protocol(
@@ -209,7 +221,10 @@ def test_campaign_uses_sterling_backend_and_configured_parallelism(
         == DEFAULT_STERLING_NETWORK_ISOLATION_MODE
     )
     assert campaign.backend.agent_image == TEST_AGENT_IMAGE
-    assert campaign.backend.artifact_reader_image == TEST_CONTROLLER_IMAGE
+    assert (
+        campaign.backend.artifact_reader_image
+        == TEST_ARTIFACT_READER_IMAGE
+    )
     assert (
         campaign.backend.reference_claim_name
         == DEFAULT_STERLING_REFERENCE_CLAIM
@@ -322,7 +337,7 @@ def test_campaign_workload_uses_containerized_azure_launcher(
         )
     }
     assert workload.evaluation is not None
-    assert workload.evaluation.image == TEST_CONTROLLER_IMAGE
+    assert workload.evaluation.image == TEST_EVALUATOR_IMAGE
     assert workload.evaluation.command == ("granular-mean-evaluator",)
     assert workload.cpu_request == DEFAULT_AGENT_CPU_REQUEST
     assert workload.cpu_limit == DEFAULT_AGENT_CPU_LIMIT
@@ -444,6 +459,8 @@ def test_cluster_resources_run_the_orchestrator_in_kubernetes(
     assert deployment["automountServiceAccountToken"] is True
     assert preparation["containers"][0]["image"] == TEST_CONTROLLER_IMAGE
     assert deployment["containers"][0]["image"] == TEST_CONTROLLER_IMAGE
+    assert "ports" not in deployment["containers"][0]
+    assert "Service" not in by_kind
     assert deployment["containers"][0]["resources"]["requests"] == {
         "cpu": "500m",
         "memory": "1Gi",
@@ -562,6 +579,10 @@ def test_campaign_defaults_to_published_images(
 ) -> None:
     monkeypatch.delenv("GRANULAR_MEAN_AGENT_IMAGE", raising=False)
     monkeypatch.delenv("GRANULAR_MEAN_CONTROLLER_IMAGE", raising=False)
+    monkeypatch.delenv(
+        "GRANULAR_MEAN_ARTIFACT_READER_IMAGE",
+        raising=False,
+    )
     monkeypatch.delenv("GRANULAR_MEAN_EVALUATOR_IMAGE", raising=False)
     definition = build_reviewed_definition()
     contract = load_output_contract(definition.contract_path)
@@ -570,8 +591,39 @@ def test_campaign_defaults_to_published_images(
 
     assert campaign.plan.backend_image == DEFAULT_AGENT_IMAGE
     assert campaign.backend.agent_image == DEFAULT_AGENT_IMAGE
-    assert campaign.backend.artifact_reader_image == DEFAULT_CONTROLLER_IMAGE
+    assert (
+        campaign.backend.artifact_reader_image
+        == DEFAULT_ARTIFACT_READER_IMAGE
+    )
     assert campaign.controller.image == DEFAULT_CONTROLLER_IMAGE
+    assert definition.evaluation.image == DEFAULT_EVALUATOR_IMAGE
+
+
+def test_controller_upgrade_preserves_other_image_identities(
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("GRANULAR_MEAN_AGENT_IMAGE", raising=False)
+    monkeypatch.delenv(
+        "GRANULAR_MEAN_ARTIFACT_READER_IMAGE",
+        raising=False,
+    )
+    monkeypatch.delenv("GRANULAR_MEAN_EVALUATOR_IMAGE", raising=False)
+    monkeypatch.setenv(
+        "GRANULAR_MEAN_CONTROLLER_IMAGE",
+        TEST_CONTROLLER_IMAGE,
+    )
+    definition = build_reviewed_definition()
+    contract = load_output_contract(definition.contract_path)
+
+    campaign = build_campaign(definition, contract)
+
+    assert campaign.plan.backend_image == DEFAULT_AGENT_IMAGE
+    assert campaign.backend.agent_image == DEFAULT_AGENT_IMAGE
+    assert (
+        campaign.backend.artifact_reader_image
+        == DEFAULT_ARTIFACT_READER_IMAGE
+    )
+    assert campaign.controller.image == TEST_CONTROLLER_IMAGE
     assert definition.evaluation.image == DEFAULT_EVALUATOR_IMAGE
 
 
@@ -625,7 +677,10 @@ def test_images_pin_current_brunner_build() -> None:
     assert "reference" not in dockerignore
     assert not is_unpublished_image(DEFAULT_AGENT_IMAGE)
     assert not is_unpublished_image(DEFAULT_CONTROLLER_IMAGE)
+    assert not is_unpublished_image(DEFAULT_ARTIFACT_READER_IMAGE)
+    assert DEFAULT_ARTIFACT_READER_IMAGE != DEFAULT_CONTROLLER_IMAGE
     assert DEFAULT_EVALUATOR_IMAGE != DEFAULT_CONTROLLER_IMAGE
+    assert DEFAULT_REFERENCE_UPLOAD_IMAGE == DEFAULT_ARTIFACT_READER_IMAGE
     assert DEFAULT_EVALUATOR_IMAGE in RETIRED_CONTROLLER_IMAGES
 
 
@@ -654,14 +709,56 @@ def test_campaign_launcher_only_supervises_brunner() -> None:
 
     assert "campaign-submit" in launcher
     assert "campaign-status" in launcher
+    assert "campaign-sync" in launcher
     assert "campaign-monitor" in launcher
-    assert "campaign-retrieve" in launcher
-    assert "campaign-delete" in launcher
+    assert "campaign-retire" in launcher
+    assert "--resume-from" in launcher
+    assert "campaign-retrieve" not in launcher
+    assert "campaign-delete" not in launcher
     assert "launchctl" not in launcher
     assert "campaign-run" not in launcher
     assert "campaign-init" not in launcher
     assert "trial-assess" not in launcher
     assert "campaign-step" not in launcher
+
+
+def test_campaign_monitor_does_not_require_kubernetes(
+    tmp_path: Path,
+) -> None:
+    root = Path(__file__).parents[1]
+    launcher = root / "scripts/manage-campaign.sh"
+    archive = tmp_path / "archive"
+    archive.mkdir()
+    arguments = tmp_path / "arguments.txt"
+    brunner = tmp_path / "brunner"
+    brunner.write_text(
+        "#!/usr/bin/env bash\n"
+        'printf "%s\\n" "$@" > "${BRUNNER_ARGS_PATH}"\n'
+    )
+    brunner.chmod(0o755)
+    environment = {
+        **os.environ,
+        "BRUNNER_ARGS_PATH": str(arguments),
+        "GRANULAR_MEAN_BRUNNER": str(brunner),
+        "GRANULAR_MEAN_CAMPAIGN_PORT": "9876",
+        "KUBECTL": str(tmp_path / "missing-kubectl"),
+    }
+
+    result = subprocess.run(
+        [str(launcher), "monitor", str(archive)],
+        capture_output=True,
+        check=False,
+        env=environment,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert arguments.read_text().splitlines() == [
+        "campaign-monitor",
+        str(archive),
+        "--local-port",
+        "9876",
+    ]
 
 
 def test_definition_requires_image_backed_sterling_evaluation() -> None:

@@ -9,6 +9,10 @@ DEFAULT_AGENT_IMAGE = (
 )
 DEFAULT_CONTROLLER_IMAGE = (
     "ghcr.io/cbizon/granular-mean-controller@sha256:"
+    "72b30425e2a46a3d3e29abe69f2db5fb2a39d571c71772583bf4c0cb87a93363"
+)
+DEFAULT_ARTIFACT_READER_IMAGE = (
+    "ghcr.io/cbizon/granular-mean-controller@sha256:"
     "704060b123607eb323abd15dd685167f818a651ced102940f29486b07b7084e9"
 )
 DEFAULT_EVALUATOR_IMAGE = (
@@ -20,7 +24,7 @@ DEFAULT_SQUID_IMAGE = (
     "6a097f68bae708cedbabd6188d68c7e2e7a38cedd05a176e1cc0ba29e3bbe029"
 )
 
-DEFAULT_REFERENCE_UPLOAD_IMAGE = DEFAULT_CONTROLLER_IMAGE
+DEFAULT_REFERENCE_UPLOAD_IMAGE = DEFAULT_ARTIFACT_READER_IMAGE
 
 RETIRED_AGENT_IMAGES = (
     (
@@ -54,6 +58,14 @@ RETIRED_AGENT_IMAGES = (
 )
 RETIRED_AGENT_IMAGE = RETIRED_AGENT_IMAGES[0]
 RETIRED_CONTROLLER_IMAGES = (
+    (
+        "ghcr.io/cbizon/granular-mean-controller@sha256:"
+        "554a508ab774a7c7e000ec2e41fb9f365109abb3cdf8717029ed21348ccab8f7"
+    ),
+    (
+        "ghcr.io/cbizon/granular-mean-controller@sha256:"
+        "704060b123607eb323abd15dd685167f818a651ced102940f29486b07b7084e9"
+    ),
     (
         "ghcr.io/cbizon/granular-mean-controller@sha256:"
         "0795d16f7952c03b00ccaf98447b6cdb1aed31e3bf1423c73d90fdf7e0f659f0"

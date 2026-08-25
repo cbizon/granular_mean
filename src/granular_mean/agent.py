@@ -17,6 +17,7 @@ CAMPAIGN_CLAUDE_MODELS = (
     "claude-haiku-4-5",
     "claude-opus-5",
     "claude-sonnet-5",
+    "claude-fable-5",
 )
 CAMPAIGN_EFFORT = "low"
 CAMPAIGN_EFFORTS = (CAMPAIGN_EFFORT,)

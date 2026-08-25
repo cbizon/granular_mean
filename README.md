@@ -107,16 +107,18 @@ multi-gigabyte trajectory artifacts.
 ## Campaign
 
 The campaign runs `claude-haiku-4-5`, `gpt-5.6-luna`, `gpt-5.6-terra`,
-`gpt-5.6-sol`, `claude-opus-5`, and `claude-sonnet-5`, in that order, once
-each at `low`. Trial IDs are stable within campaign
-`granular-figure1-haiku-luna-terra-sol-low-cluster-v1`; Opus and Sonnet were
-appended to the original four-trial campaign under the same durable identity.
+`gpt-5.6-sol`, `claude-opus-5`, `claude-sonnet-5`, and `claude-fable-5`, in
+that order, once each at `low`. Trial IDs are stable within campaign
+`granular-figure1-haiku-luna-terra-sol-low-cluster-v1`; Opus, Sonnet, and
+Fable were appended to the original four-trial campaign under the same durable
+identity.
 
 Brunner's orchestrator runs as a Kubernetes Deployment in namespace `bizon`.
-Its append-only state and finalized results live on separate `ReadWriteMany`
-PVCs. The laptop is only a client for submit, status, port-forwarded
-monitoring, retrieval, and deletion. Closing the monitor, sleeping the laptop,
-losing the VPN, or terminating the client command does not stop the campaign.
+Its append-only state and published result snapshots live on separate
+`ReadWriteMany` PVCs. The laptop is only a client for submit, status, archive
+synchronization, local monitoring, verified retirement, and archive-backed
+restoration. Sleeping the laptop, losing the VPN, or terminating a client
+command does not stop an active campaign.
 
 Each trial Job runs the candidate agent as an init container and the trusted
 deterministic evaluator as the main container. Only the agent receives the
@@ -159,20 +161,23 @@ docker buildx build \
 ```
 
 Both Dockerfiles require explicit Brunner and tool versions. The published
-immutable images are:
+immutable images are role-specific:
 
 ```bash
-ghcr.io/cbizon/granular-mean-agent@sha256:0d222e1700e49dcd24107c462c76500f0612811c6041227b66f29ac72f588537
-ghcr.io/cbizon/granular-mean-controller@sha256:704060b123607eb323abd15dd685167f818a651ced102940f29486b07b7084e9
-ghcr.io/cbizon/granular-mean-controller@sha256:0795d16f7952c03b00ccaf98447b6cdb1aed31e3bf1423c73d90fdf7e0f659f0  # evaluator
+agent:           ghcr.io/cbizon/granular-mean-agent@sha256:0d222e1700e49dcd24107c462c76500f0612811c6041227b66f29ac72f588537
+controller:      ghcr.io/cbizon/granular-mean-controller@sha256:72b30425e2a46a3d3e29abe69f2db5fb2a39d571c71772583bf4c0cb87a93363
+artifact reader: ghcr.io/cbizon/granular-mean-controller@sha256:704060b123607eb323abd15dd685167f818a651ced102940f29486b07b7084e9
+evaluator:       ghcr.io/cbizon/granular-mean-controller@sha256:0795d16f7952c03b00ccaf98447b6cdb1aed31e3bf1423c73d90fdf7e0f659f0
 ```
 
 They are pinned in `src/granular_mean/images.py`. Brunner injects the submitted
 immutable image identities when the controller reloads the campaign and
 definition, so the controller image does not need to contain its own final
-digest. The evaluator remains pinned to the prior controller image while Opus
-and Sonnet are appended, preserving the completed campaign's evaluation
-identity.
+digest. Controller-only upgrades must leave the agent, evaluator, and artifact
+reader digests unchanged. The evaluator remains pinned to the prior controller
+image, preserving the completed campaign's evaluation identity. Existing trial
+IDs must also retain the agent image that created them; only newly appended
+trial IDs may select a newer agent image.
 
 ### Cluster Prerequisites
 
@@ -206,34 +211,38 @@ scripts/manage-campaign.sh submit
 scripts/manage-campaign.sh status
 ```
 
-Open the dashboard through a disposable local port-forward:
+Synchronize the latest checksum-verified snapshot, then run the dashboard
+entirely from that local archive:
 
 ```bash
+scripts/manage-campaign.sh sync
 scripts/manage-campaign.sh monitor
 ```
 
-The monitor is available at `http://127.0.0.1:8765/` by default. Terminating
-the port-forward does not affect the controller.
+The monitor is available at `http://127.0.0.1:8765/` by default. It does not
+load benchmark code or contact Kubernetes. Run `sync` again to refresh the
+archive while the remote campaign remains active.
 
-Retrieve the checksum-verified finalized bundle:
-
-```bash
-scripts/manage-campaign.sh retrieve
-# or
-scripts/manage-campaign.sh retrieve /path/to/destination
-```
-
-Delete the controller and control-plane resources while preserving finalized
-results, or explicitly delete the results PVC too:
+After every desired trial is complete, perform a final verified sync and
+remove all campaign-owned resources from Sterling:
 
 ```bash
-scripts/manage-campaign.sh delete
-scripts/manage-campaign.sh delete-results
+scripts/manage-campaign.sh retire
 ```
 
-The script requires context `bizon@sterling`; override
-`GRANULAR_MEAN_STERLING_CONTEXT` only when deliberately targeting another
-cluster.
+The local archive remains the durable result and can still be monitored. To
+append new model or effort IDs later, update the campaign definition and
+restore the remote campaign from that terminal archive:
+
+```bash
+scripts/manage-campaign.sh resume
+```
+
+`submit`, `status`, `sync`, `retire`, and `resume` require Kubernetes context
+`bizon@sterling`; `monitor` is local-only and does not trigger cluster login.
+Override `GRANULAR_MEAN_STERLING_CONTEXT` only when deliberately targeting
+another cluster. Pass an archive path as the second argument to `sync`,
+`monitor`, `retire`, or `resume` to override the default.
 
 ### Resources And Overrides
 

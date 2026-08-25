@@ -10,7 +10,7 @@ BENCHMARK="${GRANULAR_MEAN_BENCHMARK:-granular_mean.definition:build_reviewed_de
 CAMPAIGN="${GRANULAR_MEAN_CAMPAIGN:-granular_mean.campaign}"
 EXPECTED_CONTEXT="${GRANULAR_MEAN_STERLING_CONTEXT:-bizon@sterling}"
 PORT="${GRANULAR_MEAN_CAMPAIGN_PORT:-8765}"
-RESULTS_DIR="${2:-${ROOT_DIR}/campaign-results/haiku-luna-terra-sol-low-cluster-v1}"
+ARCHIVE_DIR="${2:-${ROOT_DIR}/campaign-results/haiku-luna-terra-sol-low-cluster-v1}"
 KUBECTL="${KUBECTL:-kubectl}"
 
 fail() {
@@ -43,14 +43,26 @@ run_brunner() {
 }
 
 case "${ACTION}" in
-    submit|status|monitor|retrieve|delete|delete-results)
+    submit|status|sync|monitor|retire|resume)
         ;;
     *)
-        fail "usage: $0 {submit|status|monitor|retrieve [DEST]|delete|delete-results}"
+        fail "usage: $0 {submit|status|sync [ARCHIVE]|monitor [ARCHIVE]|retire [ARCHIVE]|resume [ARCHIVE]}"
         ;;
 esac
 
 require_command "${BRUNNER}"
+
+case "${ACTION}" in
+    monitor)
+        [[ -d "${ARCHIVE_DIR}" ]] \
+            || fail "campaign archive does not exist: ${ARCHIVE_DIR}"
+        "${BRUNNER}" \
+            campaign-monitor "${ARCHIVE_DIR}" \
+            --local-port "${PORT}"
+        exit
+        ;;
+esac
+
 require_command "${KUBECTL}"
 require_context
 
@@ -61,21 +73,17 @@ case "${ACTION}" in
     status)
         run_brunner campaign-status
         ;;
-    monitor)
-        run_brunner campaign-monitor --local-port "${PORT}"
+    sync)
+        mkdir -p "$(dirname -- "${ARCHIVE_DIR}")"
+        run_brunner campaign-sync "${ARCHIVE_DIR}"
         ;;
-    retrieve)
-        mkdir -p "$(dirname -- "${RESULTS_DIR}")"
-        "${BRUNNER}" \
-            --benchmark "${BENCHMARK}" \
-            campaign-retrieve "${CAMPAIGN}" "${RESULTS_DIR}"
+    retire)
+        mkdir -p "$(dirname -- "${ARCHIVE_DIR}")"
+        run_brunner campaign-retire "${ARCHIVE_DIR}"
         ;;
-    delete)
-        run_brunner campaign-delete
-        ;;
-    delete-results)
-        "${BRUNNER}" \
-            --benchmark "${BENCHMARK}" \
-            campaign-delete "${CAMPAIGN}" --delete-results
+    resume)
+        [[ -d "${ARCHIVE_DIR}" ]] \
+            || fail "campaign archive does not exist: ${ARCHIVE_DIR}"
+        run_brunner campaign-submit --resume-from "${ARCHIVE_DIR}"
         ;;
 esac
