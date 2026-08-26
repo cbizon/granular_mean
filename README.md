@@ -165,7 +165,7 @@ immutable images are role-specific:
 
 ```bash
 agent:           ghcr.io/cbizon/granular-mean-agent@sha256:0d222e1700e49dcd24107c462c76500f0612811c6041227b66f29ac72f588537
-controller:      ghcr.io/cbizon/granular-mean-controller@sha256:72b30425e2a46a3d3e29abe69f2db5fb2a39d571c71772583bf4c0cb87a93363
+controller:      ghcr.io/cbizon/granular-mean-controller@sha256:cd14398692392d2298889c8b4c3dc2871624e4c1d4dbaa900a72252e836c1881
 artifact reader: ghcr.io/cbizon/granular-mean-controller@sha256:704060b123607eb323abd15dd685167f818a651ced102940f29486b07b7084e9
 evaluator:       ghcr.io/cbizon/granular-mean-controller@sha256:0795d16f7952c03b00ccaf98447b6cdb1aed31e3bf1423c73d90fdf7e0f659f0
 ```
