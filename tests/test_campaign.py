@@ -17,10 +17,14 @@ from brunner.trial import TrialIdentity
 
 from granular_mean import agent as agent_module
 from granular_mean.agent import (
+    CAMPAIGN_CLAUDE_EFFORTS,
+    CAMPAIGN_CLAUDE_HIGHEST_EFFORT,
     CAMPAIGN_CLAUDE_MODELS,
+    CAMPAIGN_CODEX_EFFORTS,
+    CAMPAIGN_CODEX_HIGHEST_EFFORT,
     CAMPAIGN_CODEX_MODELS,
-    CAMPAIGN_EFFORT,
-    CAMPAIGN_EFFORTS,
+    CAMPAIGN_HIGHEST_CLAUDE_MODELS,
+    CAMPAIGN_LOW_EFFORT,
     CODEX_MODEL,
     DEFAULT_CODEX_BASE_URL,
     azure_codex_settings,
@@ -85,6 +89,7 @@ from granular_mean.images import (
     DEFAULT_EVALUATOR_IMAGE,
     DEFAULT_REFERENCE_UPLOAD_IMAGE,
     DEFAULT_SQUID_IMAGE,
+    LOW_EFFORT_CAMPAIGN_AGENT_IMAGE,
     RETIRED_AGENT_IMAGE,
     RETIRED_AGENT_IMAGES,
     RETIRED_CONTROLLER_IMAGES,
@@ -140,15 +145,17 @@ def _campaign(monkeypatch) -> ClusterCampaign:
     return build_campaign(definition, contract)
 
 
-def test_campaign_runs_selected_models_at_low_effort() -> None:
+def test_campaign_retains_low_trials_and_appends_highest_efforts() -> None:
     trials = build_campaign_trials()
 
     assert tuple(trial.model for trial in trials) == (
         CAMPAIGN_CLAUDE_MODELS[0],
         *CAMPAIGN_CODEX_MODELS,
         *CAMPAIGN_CLAUDE_MODELS[1:],
+        CAMPAIGN_HIGHEST_CLAUDE_MODELS[0],
+        *CAMPAIGN_CODEX_MODELS,
+        *CAMPAIGN_HIGHEST_CLAUDE_MODELS[1:],
     )
-    assert {trial.effort for trial in trials} == {CAMPAIGN_EFFORT}
     assert tuple(trial.provider for trial in trials) == (
         "claude",
         "codex",
@@ -157,7 +164,35 @@ def test_campaign_runs_selected_models_at_low_effort() -> None:
         "claude",
         "claude",
         "claude",
+        "claude",
+        "codex",
+        "codex",
+        "codex",
+        "claude",
+        "claude",
     )
+    assert tuple(trial.effort for trial in trials) == (
+        CAMPAIGN_LOW_EFFORT,
+        CAMPAIGN_LOW_EFFORT,
+        CAMPAIGN_LOW_EFFORT,
+        CAMPAIGN_LOW_EFFORT,
+        CAMPAIGN_LOW_EFFORT,
+        CAMPAIGN_LOW_EFFORT,
+        CAMPAIGN_LOW_EFFORT,
+        CAMPAIGN_CLAUDE_HIGHEST_EFFORT,
+        CAMPAIGN_CODEX_HIGHEST_EFFORT,
+        CAMPAIGN_CODEX_HIGHEST_EFFORT,
+        CAMPAIGN_CODEX_HIGHEST_EFFORT,
+        CAMPAIGN_CLAUDE_HIGHEST_EFFORT,
+        CAMPAIGN_CLAUDE_HIGHEST_EFFORT,
+    )
+    low_trials = trials[:7]
+    highest_trials = trials[7:]
+    assert {
+        trial.backend_image for trial in low_trials
+    } == {LOW_EFFORT_CAMPAIGN_AGENT_IMAGE}
+    assert {trial.backend_image for trial in highest_trials} == {None}
+    assert all("fable" not in trial.test_id for trial in highest_trials)
     claude_trials = tuple(
         trial for trial in trials if trial.provider == "claude"
     )
@@ -172,7 +207,7 @@ def test_campaign_runs_selected_models_at_low_effort() -> None:
     assert {trial.environment_key for trial in codex_trials} == {
         "AZURE_OPENAI_API_KEY"
     }
-    assert len({trial.test_id for trial in trials}) == 7
+    assert len({trial.test_id for trial in trials}) == 13
 
 
 def test_remote_agent_delegates_to_brunner_protocol(
@@ -303,7 +338,10 @@ def test_campaign_workload_uses_containerized_azure_launcher(
     campaign = _campaign(monkeypatch)
     definition = build_reviewed_definition()
     campaign_trial = next(
-        trial for trial in campaign.plan.trials if trial.provider == "codex"
+        trial
+        for trial in campaign.plan.trials
+        if trial.provider == "codex"
+        and trial.effort == CAMPAIGN_CODEX_HIGHEST_EFFORT
     )
     trial = tmp_path / campaign_trial.test_id
 
@@ -797,38 +835,62 @@ def test_prompt_states_the_full_execution_allowance() -> None:
 
 
 @pytest.mark.parametrize("model", CAMPAIGN_CODEX_MODELS)
-def test_provider_settings_pin_codex_models_to_low_and_azure(
+@pytest.mark.parametrize("effort", CAMPAIGN_CODEX_EFFORTS)
+def test_provider_settings_pin_codex_models_and_azure(
     model: str,
+    effort: str,
 ) -> None:
     settings = provider_settings(
         TrialIdentity(
-            test_id=f"{model}-low",
+            test_id=f"{model}-{effort}",
             provider="codex",
             model=model,
-            effort=CAMPAIGN_EFFORT,
+            effort=effort,
         )
     )
 
-    assert settings.allowed_efforts == CAMPAIGN_EFFORTS
+    assert settings.allowed_efforts == CAMPAIGN_CODEX_EFFORTS
     assert settings.provider_id == "azure"
     assert settings.base_url == DEFAULT_CODEX_BASE_URL
     assert settings.environment_key == "AZURE_OPENAI_API_KEY"
 
 
-@pytest.mark.parametrize("model", CAMPAIGN_CLAUDE_MODELS)
-def test_provider_settings_accept_claude_models_at_low(model: str) -> None:
+@pytest.mark.parametrize(
+    ("model", "effort"),
+    tuple(
+        (model, effort)
+        for model, efforts in CAMPAIGN_CLAUDE_EFFORTS.items()
+        for effort in efforts
+    ),
+)
+def test_provider_settings_accept_campaign_claude_efforts(
+    model: str,
+    effort: str,
+) -> None:
     settings = provider_settings(
         TrialIdentity(
-            test_id=f"{model}-low",
+            test_id=f"{model}-{effort}",
             provider="claude",
             model=model,
-            effort=CAMPAIGN_EFFORT,
+            effort=effort,
         )
     )
 
     assert settings.provider == "claude"
-    assert settings.allowed_efforts == CAMPAIGN_EFFORTS
+    assert settings.allowed_efforts == CAMPAIGN_CLAUDE_EFFORTS[model]
     assert settings.provider_id is None
+
+
+def test_provider_settings_reject_fable_max_effort() -> None:
+    with pytest.raises(ValueError, match="supports campaign efforts"):
+        provider_settings(
+            TrialIdentity(
+                test_id="claude-fable-5-max-r01",
+                provider="claude",
+                model="claude-fable-5",
+                effort=CAMPAIGN_CLAUDE_HIGHEST_EFFORT,
+            )
+        )
 
 
 def test_codex_wrapper_bypasses_initial_nested_sandbox(
@@ -1016,7 +1078,7 @@ def test_campaign_rejects_unreviewed_definition(
 def test_provider_settings_reject_unsupported_effort(
     effort: str | None,
 ) -> None:
-    with pytest.raises(ValueError, match="effort must be 'low'"):
+    with pytest.raises(ValueError, match="effort must be one of"):
         provider_settings(
             TrialIdentity(
                 test_id="invalid-effort",

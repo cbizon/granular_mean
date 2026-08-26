@@ -13,9 +13,12 @@ from brunner.backends import KubernetesProfile
 from brunner.contract import OutputContract
 
 from granular_mean.agent import (
+    CAMPAIGN_CLAUDE_HIGHEST_EFFORT,
     CAMPAIGN_CLAUDE_MODELS,
+    CAMPAIGN_CODEX_HIGHEST_EFFORT,
     CAMPAIGN_CODEX_MODELS,
-    CAMPAIGN_EFFORT,
+    CAMPAIGN_HIGHEST_CLAUDE_MODELS,
+    CAMPAIGN_LOW_EFFORT,
     azure_codex_settings,
     codex_environment_key,
 )
@@ -25,6 +28,7 @@ from granular_mean.images import (
     DEFAULT_CONTROLLER_IMAGE,
     DEFAULT_EVALUATOR_IMAGE,
     DEFAULT_SQUID_IMAGE,
+    LOW_EFFORT_CAMPAIGN_AGENT_IMAGE,
     RETIRED_AGENT_IMAGE,
     RETIRED_AGENT_IMAGES,
     RETIRED_CONTROLLER_IMAGES,
@@ -79,33 +83,71 @@ NESTED_SANDBOX_BYPASS_ENVIRONMENT = (
 
 
 def build_campaign_trials() -> tuple[CampaignTrial, ...]:
-    claude_trials = tuple(
+    low_claude_trials = tuple(
         CampaignTrial(
             test_id=f"{model}-low-r01",
             provider="claude",
             model=model,
-            effort=CAMPAIGN_EFFORT,
+            effort=CAMPAIGN_LOW_EFFORT,
+            backend_image=LOW_EFFORT_CAMPAIGN_AGENT_IMAGE,
         )
         for model in CAMPAIGN_CLAUDE_MODELS
     )
-    codex_trials = tuple(
+    low_codex_trials = tuple(
         CampaignTrial(
             test_id=f"codex-{model.replace('.', '-')}-low-r01",
             provider="codex",
             model=model,
-            effort=CAMPAIGN_EFFORT,
+            effort=CAMPAIGN_LOW_EFFORT,
+            provider_id=settings.provider_id,
+            provider_name=settings.provider_name,
+            base_url=settings.base_url,
+            environment_key=settings.environment_key,
+            backend_image=LOW_EFFORT_CAMPAIGN_AGENT_IMAGE,
+        )
+        for model in CAMPAIGN_CODEX_MODELS
+        for settings in (
+            azure_codex_settings(model, CAMPAIGN_LOW_EFFORT),
+        )
+    )
+    highest_claude_trials = tuple(
+        CampaignTrial(
+            test_id=f"{model}-{CAMPAIGN_CLAUDE_HIGHEST_EFFORT}-r01",
+            provider="claude",
+            model=model,
+            effort=CAMPAIGN_CLAUDE_HIGHEST_EFFORT,
+        )
+        for model in CAMPAIGN_HIGHEST_CLAUDE_MODELS
+    )
+    highest_codex_trials = tuple(
+        CampaignTrial(
+            test_id=(
+                f"codex-{model.replace('.', '-')}-"
+                f"{CAMPAIGN_CODEX_HIGHEST_EFFORT}-r01"
+            ),
+            provider="codex",
+            model=model,
+            effort=CAMPAIGN_CODEX_HIGHEST_EFFORT,
             provider_id=settings.provider_id,
             provider_name=settings.provider_name,
             base_url=settings.base_url,
             environment_key=settings.environment_key,
         )
         for model in CAMPAIGN_CODEX_MODELS
-        for settings in (azure_codex_settings(model, CAMPAIGN_EFFORT),)
+        for settings in (
+            azure_codex_settings(
+                model,
+                CAMPAIGN_CODEX_HIGHEST_EFFORT,
+            ),
+        )
     )
     return (
-        claude_trials[0],
-        *codex_trials,
-        *claude_trials[1:],
+        low_claude_trials[0],
+        *low_codex_trials,
+        *low_claude_trials[1:],
+        highest_claude_trials[0],
+        *highest_codex_trials,
+        *highest_claude_trials[1:],
     )
 
 

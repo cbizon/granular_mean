@@ -19,8 +19,22 @@ CAMPAIGN_CLAUDE_MODELS = (
     "claude-sonnet-5",
     "claude-fable-5",
 )
-CAMPAIGN_EFFORT = "low"
-CAMPAIGN_EFFORTS = (CAMPAIGN_EFFORT,)
+CAMPAIGN_HIGHEST_CLAUDE_MODELS = CAMPAIGN_CLAUDE_MODELS[:-1]
+CAMPAIGN_LOW_EFFORT = "low"
+CAMPAIGN_CODEX_HIGHEST_EFFORT = "xhigh"
+CAMPAIGN_CLAUDE_HIGHEST_EFFORT = "max"
+CAMPAIGN_CODEX_EFFORTS = (
+    CAMPAIGN_LOW_EFFORT,
+    CAMPAIGN_CODEX_HIGHEST_EFFORT,
+)
+CAMPAIGN_CLAUDE_EFFORTS = {
+    model: (
+        CAMPAIGN_LOW_EFFORT,
+        CAMPAIGN_CLAUDE_HIGHEST_EFFORT,
+    )
+    for model in CAMPAIGN_HIGHEST_CLAUDE_MODELS
+}
+CAMPAIGN_CLAUDE_EFFORTS["claude-fable-5"] = (CAMPAIGN_LOW_EFFORT,)
 DEFAULT_CODEX_PROVIDER_ID = "azure"
 DEFAULT_CODEX_PROVIDER_NAME = "Azure OpenAI"
 DEFAULT_CODEX_BASE_URL = (
@@ -64,37 +78,41 @@ def azure_codex_settings(
 
 
 def provider_settings(identity: TrialIdentity) -> ProviderSettings:
-    if identity.effort != CAMPAIGN_EFFORT:
-        raise ValueError(
-            f"granular campaign effort must be {CAMPAIGN_EFFORT!r}, got "
-            f"{identity.effort!r}"
-        )
     if identity.provider == "codex":
         if identity.model not in CAMPAIGN_CODEX_MODELS:
             raise ValueError(
                 "granular Codex campaign model must be one of "
                 f"{CAMPAIGN_CODEX_MODELS}, got {identity.model!r}"
             )
+        if identity.effort not in CAMPAIGN_CODEX_EFFORTS:
+            raise ValueError(
+                f"granular Codex campaign effort must be one of "
+                f"{CAMPAIGN_CODEX_EFFORTS}, got {identity.effort!r}"
+            )
         return azure_codex_settings(
             identity.model,
             identity.effort,
-            allowed_efforts=CAMPAIGN_EFFORTS,
+            allowed_efforts=CAMPAIGN_CODEX_EFFORTS,
         )
-    if (
-        identity.provider == "claude"
-        and identity.model in CAMPAIGN_CLAUDE_MODELS
-    ):
+    if identity.provider == "claude":
+        allowed_efforts = CAMPAIGN_CLAUDE_EFFORTS.get(identity.model)
+        if allowed_efforts is None:
+            raise ValueError(
+                "granular Claude campaign model must be one of "
+                f"{CAMPAIGN_CLAUDE_MODELS}, got "
+                f"{identity.model!r}"
+            )
+        if identity.effort not in allowed_efforts:
+            raise ValueError(
+                f"granular Claude campaign model {identity.model!r} "
+                f"supports campaign efforts {allowed_efforts}, got "
+                f"{identity.effort!r}"
+            )
         return ProviderSettings(
             provider=identity.provider,
             model=identity.model,
             effort=identity.effort,
-            allowed_efforts=CAMPAIGN_EFFORTS,
-        )
-    if identity.provider == "claude":
-        raise ValueError(
-            "granular Claude campaign model must be one of "
-            f"{CAMPAIGN_CLAUDE_MODELS}, got "
-            f"{identity.model!r}"
+            allowed_efforts=allowed_efforts,
         )
     raise ValueError(
         "granular campaign provider must be 'codex' or 'claude', got "

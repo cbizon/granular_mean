@@ -106,12 +106,14 @@ multi-gigabyte trajectory artifacts.
 
 ## Campaign
 
-The campaign runs `claude-haiku-4-5`, `gpt-5.6-luna`, `gpt-5.6-terra`,
-`gpt-5.6-sol`, `claude-opus-5`, `claude-sonnet-5`, and `claude-fable-5`, in
-that order, once each at `low`. Trial IDs are stable within campaign
-`granular-figure1-haiku-luna-terra-sol-low-cluster-v1`; Opus, Sonnet, and
-Fable were appended to the original four-trial campaign under the same durable
-identity.
+The campaign retains its original `low` trials for `claude-haiku-4-5`,
+`gpt-5.6-luna`, `gpt-5.6-terra`, `gpt-5.6-sol`, `claude-opus-5`,
+`claude-sonnet-5`, and `claude-fable-5`. It then appends the highest supported
+effort for every model except Fable: `max` for Haiku, Opus, and Sonnet, and
+`xhigh` for Luna, Terra, and Sol. Trial IDs remain stable within campaign
+`granular-figure1-haiku-luna-terra-sol-low-cluster-v1`; existing low trials
+stay pinned to the agent image that created them, while appended IDs use the
+current default agent image.
 
 Brunner's orchestrator runs as a Kubernetes Deployment in namespace `bizon`.
 Its append-only state and published result snapshots live on separate
@@ -164,8 +166,8 @@ Both Dockerfiles require explicit Brunner and tool versions. The published
 immutable images are role-specific:
 
 ```bash
-agent:           ghcr.io/cbizon/granular-mean-agent@sha256:0d222e1700e49dcd24107c462c76500f0612811c6041227b66f29ac72f588537
-controller:      ghcr.io/cbizon/granular-mean-controller@sha256:cd14398692392d2298889c8b4c3dc2871624e4c1d4dbaa900a72252e836c1881
+agent:           ghcr.io/cbizon/granular-mean-agent@sha256:eeecd1e46af432c54c2c1d80fb48a75d0749c5759e0b4f4591b6f6c508bc29d3
+controller:      ghcr.io/cbizon/granular-mean-controller@sha256:c7127c32a5ae5999567e0780f876ace0758e086e6d8a6fa82240cddf60f688fe
 artifact reader: ghcr.io/cbizon/granular-mean-controller@sha256:704060b123607eb323abd15dd685167f818a651ced102940f29486b07b7084e9
 evaluator:       ghcr.io/cbizon/granular-mean-controller@sha256:0795d16f7952c03b00ccaf98447b6cdb1aed31e3bf1423c73d90fdf7e0f659f0
 ```
