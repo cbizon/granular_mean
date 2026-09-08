@@ -23,8 +23,10 @@ from granular_mean.agent import (
     CAMPAIGN_CODEX_EFFORTS,
     CAMPAIGN_CODEX_HIGHEST_EFFORT,
     CAMPAIGN_CODEX_MODELS,
+    CAMPAIGN_HISTORICAL_CODEX_MODELS,
     CAMPAIGN_HIGHEST_CLAUDE_MODELS,
     CAMPAIGN_LOW_EFFORT,
+    CAMPAIGN_NEW_CODEX_MODELS,
     CODEX_MODEL,
     DEFAULT_CODEX_BASE_URL,
     azure_codex_settings,
@@ -148,28 +150,32 @@ def _campaign(monkeypatch) -> ClusterCampaign:
 def test_campaign_retains_low_trials_and_appends_highest_efforts() -> None:
     trials = build_campaign_trials()
 
+    assert tuple(trial.test_id for trial in trials) == (
+        "claude-haiku-4-5-low-r01",
+        "codex-gpt-5-6-luna-low-r01",
+        "codex-gpt-5-6-terra-low-r01",
+        "codex-gpt-5-6-sol-low-r01",
+        "claude-opus-5-low-r01",
+        "claude-sonnet-5-low-r01",
+        "claude-fable-5-low-r01",
+        "claude-haiku-4-5-max-r01",
+        "codex-gpt-5-6-luna-xhigh-r01",
+        "codex-gpt-5-6-terra-xhigh-r01",
+        "codex-gpt-5-6-sol-xhigh-r01",
+        "claude-opus-5-max-r01",
+        "claude-sonnet-5-max-r01",
+        "codex-gpt-6-astra-low-r01",
+        "codex-gpt-6-astra-xhigh-r01",
+    )
     assert tuple(trial.model for trial in trials) == (
         CAMPAIGN_CLAUDE_MODELS[0],
-        *CAMPAIGN_CODEX_MODELS,
+        *CAMPAIGN_HISTORICAL_CODEX_MODELS,
         *CAMPAIGN_CLAUDE_MODELS[1:],
         CAMPAIGN_HIGHEST_CLAUDE_MODELS[0],
-        *CAMPAIGN_CODEX_MODELS,
+        *CAMPAIGN_HISTORICAL_CODEX_MODELS,
         *CAMPAIGN_HIGHEST_CLAUDE_MODELS[1:],
-    )
-    assert tuple(trial.provider for trial in trials) == (
-        "claude",
-        "codex",
-        "codex",
-        "codex",
-        "claude",
-        "claude",
-        "claude",
-        "claude",
-        "codex",
-        "codex",
-        "codex",
-        "claude",
-        "claude",
+        CAMPAIGN_NEW_CODEX_MODELS[0],
+        CAMPAIGN_NEW_CODEX_MODELS[0],
     )
     assert tuple(trial.effort for trial in trials) == (
         CAMPAIGN_LOW_EFFORT,
@@ -185,14 +191,16 @@ def test_campaign_retains_low_trials_and_appends_highest_efforts() -> None:
         CAMPAIGN_CODEX_HIGHEST_EFFORT,
         CAMPAIGN_CLAUDE_HIGHEST_EFFORT,
         CAMPAIGN_CLAUDE_HIGHEST_EFFORT,
+        CAMPAIGN_LOW_EFFORT,
+        CAMPAIGN_CODEX_HIGHEST_EFFORT,
     )
     low_trials = trials[:7]
-    highest_trials = trials[7:]
+    appended_trials = trials[7:]
     assert {
         trial.backend_image for trial in low_trials
     } == {LOW_EFFORT_CAMPAIGN_AGENT_IMAGE}
-    assert {trial.backend_image for trial in highest_trials} == {None}
-    assert all("fable" not in trial.test_id for trial in highest_trials)
+    assert {trial.backend_image for trial in appended_trials} == {None}
+    assert all("fable" not in trial.test_id for trial in appended_trials)
     claude_trials = tuple(
         trial for trial in trials if trial.provider == "claude"
     )
@@ -207,7 +215,7 @@ def test_campaign_retains_low_trials_and_appends_highest_efforts() -> None:
     assert {trial.environment_key for trial in codex_trials} == {
         "AZURE_OPENAI_API_KEY"
     }
-    assert len({trial.test_id for trial in trials}) == 13
+    assert len({trial.test_id for trial in trials}) == 15
 
 
 def test_remote_agent_delegates_to_brunner_protocol(

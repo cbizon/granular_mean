@@ -110,7 +110,9 @@ The campaign retains its original `low` trials for `claude-haiku-4-5`,
 `gpt-5.6-luna`, `gpt-5.6-terra`, `gpt-5.6-sol`, `claude-opus-5`,
 `claude-sonnet-5`, and `claude-fable-5`. It then appends the highest supported
 effort for every model except Fable: `max` for Haiku, Opus, and Sonnet, and
-`xhigh` for Luna, Terra, and Sol. Trial IDs remain stable within campaign
+`xhigh` for Luna, Terra, and Sol. The next append adds `gpt-6-astra` at `low`
+and `xhigh`, where `xhigh` is Astra's highest configured reasoning effort.
+Trial IDs remain stable within campaign
 `granular-figure1-haiku-luna-terra-sol-low-cluster-v1`; existing low trials
 stay pinned to the agent image that created them, while appended IDs use the
 current default agent image.
@@ -139,35 +141,30 @@ benchmark, evaluator, challenge, and tracked reference metadata. The 2.6 GiB
 generated reference tree remains excluded and is mounted from the trusted PVC.
 
 ```bash
-docker buildx build \
-  --build-context brunner=../brunner \
-  --build-arg BRUNNER_REVISION="$(git -C ../brunner rev-parse HEAD)" \
-  --build-arg CODEX_VERSION=VERSION \
-  --build-arg CLAUDE_CODE_VERSION=VERSION \
-  --platform linux/amd64 \
-  -f containers/agent.Dockerfile \
-  -t ghcr.io/cbizon/granular-mean-agent:VERSION \
-  --push \
-  .
+export CONTROLLER_RELEASE=brunner-d7b5f76-astra-20260908
+export CODEX_VERSION=0.144.1
+export KUBECTL_VERSION=v1.31.9
 
 docker buildx build \
   --build-context brunner=../brunner \
   --build-arg BRUNNER_REVISION="$(git -C ../brunner rev-parse HEAD)" \
-  --build-arg CODEX_VERSION=VERSION \
-  --build-arg KUBECTL_VERSION=vX.Y.Z \
+  --build-arg CODEX_VERSION="$CODEX_VERSION" \
+  --build-arg KUBECTL_VERSION="$KUBECTL_VERSION" \
   --platform linux/amd64 \
   -f containers/controller.Dockerfile \
-  -t ghcr.io/cbizon/granular-mean-controller:VERSION \
+  -t "ghcr.io/cbizon/granular-mean-controller:$CONTROLLER_RELEASE" \
   --push \
   .
 ```
 
-Both Dockerfiles require explicit Brunner and tool versions. The published
-immutable images are role-specific:
+The Astra append requires only a controller rebuild: the current agent already
+contains Codex 0.144.1 and supports arbitrary configured Azure model names.
+The evaluator and artifact reader remain pinned to the images used by the
+completed trials. The published immutable images are role-specific:
 
 ```bash
 agent:           ghcr.io/cbizon/granular-mean-agent@sha256:eeecd1e46af432c54c2c1d80fb48a75d0749c5759e0b4f4591b6f6c508bc29d3
-controller:      ghcr.io/cbizon/granular-mean-controller@sha256:c7127c32a5ae5999567e0780f876ace0758e086e6d8a6fa82240cddf60f688fe
+controller:      ghcr.io/cbizon/granular-mean-controller@sha256:7ed9344d09b113742583f6ce7547c6ddeeb4cb6969b5bac5fed82130e5ffa188
 artifact reader: ghcr.io/cbizon/granular-mean-controller@sha256:704060b123607eb323abd15dd685167f818a651ced102940f29486b07b7084e9
 evaluator:       ghcr.io/cbizon/granular-mean-controller@sha256:0795d16f7952c03b00ccaf98447b6cdb1aed31e3bf1423c73d90fdf7e0f659f0
 ```

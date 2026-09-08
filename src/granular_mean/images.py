@@ -13,7 +13,7 @@ DEFAULT_AGENT_IMAGE = (
 )
 DEFAULT_CONTROLLER_IMAGE = (
     "ghcr.io/cbizon/granular-mean-controller@sha256:"
-    "c7127c32a5ae5999567e0780f876ace0758e086e6d8a6fa82240cddf60f688fe"
+    "7ed9344d09b113742583f6ce7547c6ddeeb4cb6969b5bac5fed82130e5ffa188"
 )
 DEFAULT_ARTIFACT_READER_IMAGE = (
     "ghcr.io/cbizon/granular-mean-controller@sha256:"
@@ -63,6 +63,10 @@ RETIRED_AGENT_IMAGES = (
 )
 RETIRED_AGENT_IMAGE = RETIRED_AGENT_IMAGES[0]
 RETIRED_CONTROLLER_IMAGES = (
+    (
+        "ghcr.io/cbizon/granular-mean-controller@sha256:"
+        "c7127c32a5ae5999567e0780f876ace0758e086e6d8a6fa82240cddf60f688fe"
+    ),
     (
         "ghcr.io/cbizon/granular-mean-controller@sha256:"
         "cd14398692392d2298889c8b4c3dc2871624e4c1d4dbaa900a72252e836c1881"

@@ -17,8 +17,10 @@ from granular_mean.agent import (
     CAMPAIGN_CLAUDE_MODELS,
     CAMPAIGN_CODEX_HIGHEST_EFFORT,
     CAMPAIGN_CODEX_MODELS,
+    CAMPAIGN_HISTORICAL_CODEX_MODELS,
     CAMPAIGN_HIGHEST_CLAUDE_MODELS,
     CAMPAIGN_LOW_EFFORT,
+    CAMPAIGN_NEW_CODEX_MODELS,
     azure_codex_settings,
     codex_environment_key,
 )
@@ -105,7 +107,7 @@ def build_campaign_trials() -> tuple[CampaignTrial, ...]:
             environment_key=settings.environment_key,
             backend_image=LOW_EFFORT_CAMPAIGN_AGENT_IMAGE,
         )
-        for model in CAMPAIGN_CODEX_MODELS
+        for model in CAMPAIGN_HISTORICAL_CODEX_MODELS
         for settings in (
             azure_codex_settings(model, CAMPAIGN_LOW_EFFORT),
         )
@@ -133,13 +135,33 @@ def build_campaign_trials() -> tuple[CampaignTrial, ...]:
             base_url=settings.base_url,
             environment_key=settings.environment_key,
         )
-        for model in CAMPAIGN_CODEX_MODELS
+        for model in CAMPAIGN_HISTORICAL_CODEX_MODELS
         for settings in (
             azure_codex_settings(
                 model,
                 CAMPAIGN_CODEX_HIGHEST_EFFORT,
             ),
         )
+    )
+    new_codex_trials = tuple(
+        CampaignTrial(
+            test_id=(
+                f"codex-{model.replace('.', '-')}-{effort}-r01"
+            ),
+            provider="codex",
+            model=model,
+            effort=effort,
+            provider_id=settings.provider_id,
+            provider_name=settings.provider_name,
+            base_url=settings.base_url,
+            environment_key=settings.environment_key,
+        )
+        for model in CAMPAIGN_NEW_CODEX_MODELS
+        for effort in (
+            CAMPAIGN_LOW_EFFORT,
+            CAMPAIGN_CODEX_HIGHEST_EFFORT,
+        )
+        for settings in (azure_codex_settings(model, effort),)
     )
     return (
         low_claude_trials[0],
@@ -148,6 +170,7 @@ def build_campaign_trials() -> tuple[CampaignTrial, ...]:
         highest_claude_trials[0],
         *highest_codex_trials,
         *highest_claude_trials[1:],
+        *new_codex_trials,
     )
 
 

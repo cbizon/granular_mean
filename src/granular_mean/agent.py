@@ -8,10 +8,15 @@ from brunner.trial import TrialIdentity, load_trial_identity
 
 
 CODEX_MODEL = "gpt-5.6-sol"
-CAMPAIGN_CODEX_MODELS = (
+CAMPAIGN_HISTORICAL_CODEX_MODELS = (
     "gpt-5.6-luna",
     "gpt-5.6-terra",
     CODEX_MODEL,
+)
+CAMPAIGN_NEW_CODEX_MODELS = ("gpt-6-astra",)
+CAMPAIGN_CODEX_MODELS = (
+    *CAMPAIGN_HISTORICAL_CODEX_MODELS,
+    *CAMPAIGN_NEW_CODEX_MODELS,
 )
 CAMPAIGN_CLAUDE_MODELS = (
     "claude-haiku-4-5",
